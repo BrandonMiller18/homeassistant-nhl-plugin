@@ -14,6 +14,9 @@ jobs:
 
   hacs:
     runs-on: ubuntu-latest
+    # The HACS action reads files through the GitHub API and gets nothing back
+    # while this repository is private. Make this blocking once it is public.
+    continue-on-error: true
     steps:
       - uses: hacs/action@main
         with:
