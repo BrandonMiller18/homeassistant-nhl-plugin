@@ -18,5 +18,6 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Brand images and repo topics are set up outside the codebase
-          ignore: brands topics
+          # Repo settings (description, topics), license choice and brand images
+          # live outside the codebase; drop entries here as they are set up
+          ignore: brands description license topics
