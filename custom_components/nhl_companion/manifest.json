@@ -1,0 +1,14 @@
+{
+  "domain": "nhl_companion",
+  "name": "NHL Companion",
+  "after_dependencies": ["frontend"],
+  "codeowners": ["@BrandonMiller18"],
+  "config_flow": true,
+  "dependencies": ["http", "websocket_api"],
+  "documentation": "https://github.com/BrandonMiller18/homeassistant-nhl-plugin",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/BrandonMiller18/homeassistant-nhl-plugin/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

@@ -1,0 +1,191 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Follow an NHL team",
+        "description": "Pick the team to track. Add the integration again to follow more teams.",
+        "data": {
+          "team_abbrev": "Team"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This team is already being followed.",
+      "all_configured": "Every team is already being followed."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "NHL Companion options",
+        "data": {
+          "live_interval": "Live polling interval",
+          "alert_delay": "Alert delay (broadcast sync)",
+          "game_soon_minutes": "\"Game starts soon\" lead time",
+          "game_day_hour": "Game day alert hour",
+          "track_opponent": "Fire opponent goal and penalty events",
+          "api_base_url": "Advanced: NHL API base URL"
+        },
+        "data_description": {
+          "live_interval": "Seconds between play-by-play checks during a game. Lower is faster but uses more requests.",
+          "alert_delay": "Hold every event this many seconds so the horn matches your TV or stream, which runs behind the live data.",
+          "game_soon_minutes": "Minutes before puck drop to fire game_soon.",
+          "game_day_hour": "Local hour (0-23) on game day to fire game_day.",
+          "track_opponent": "Turn off to only get events for your own team.",
+          "api_base_url": "Leave as default. Change only for testing against a mock server."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "game_status": {
+        "name": "Game status",
+        "state": {
+          "no_game": "No game",
+          "scheduled": "Scheduled",
+          "pre_game": "Pre-game",
+          "live": "Live",
+          "intermission": "Intermission",
+          "final": "Final",
+          "postponed": "Postponed"
+        }
+      },
+      "team_score": {
+        "name": "Score"
+      },
+      "opponent_score": {
+        "name": "Opponent score"
+      },
+      "next_game": {
+        "name": "Next game"
+      },
+      "last_game": {
+        "name": "Last game"
+      },
+      "standing": {
+        "name": "Standings points"
+      }
+    },
+    "binary_sensor": {
+      "game_today": {
+        "name": "Game today"
+      },
+      "game_live": {
+        "name": "Game live"
+      },
+      "power_play": {
+        "name": "Power play"
+      }
+    },
+    "switch": {
+      "game_alerts": {
+        "name": "Game alerts"
+      }
+    },
+    "event": {
+      "goal_event": {
+        "name": "Goal",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "team_goal": "Team goal",
+              "opponent_goal": "Opponent goal",
+              "goal_reversed": "Goal reversed"
+            }
+          }
+        }
+      },
+      "penalty_event": {
+        "name": "Penalty",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "team_penalty": "Team penalty",
+              "opponent_penalty": "Opponent penalty"
+            }
+          }
+        }
+      },
+      "period_event": {
+        "name": "Period",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "period_start": "Period start",
+              "period_end": "Period end",
+              "intermission_start": "Intermission start",
+              "intermission_end": "Intermission end"
+            }
+          }
+        }
+      },
+      "game_event": {
+        "name": "Game",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "game_day": "Game day",
+              "game_soon": "Game starts soon",
+              "game_start": "Game start",
+              "game_end_win": "Win",
+              "game_end_loss": "Loss",
+              "game_end_otl": "Overtime loss"
+            }
+          }
+        }
+      }
+    }
+  },
+  "selector": {
+    "event_type": {
+      "options": {
+        "team_goal": "Team goal",
+        "opponent_goal": "Opponent goal",
+        "goal_reversed": "Goal reversed",
+        "team_penalty": "Team penalty",
+        "opponent_penalty": "Opponent penalty",
+        "period_start": "Period start",
+        "period_end": "Period end",
+        "intermission_start": "Intermission start",
+        "intermission_end": "Intermission end",
+        "game_day": "Game day",
+        "game_soon": "Game starts soon",
+        "game_start": "Game start",
+        "game_end_win": "Win",
+        "game_end_loss": "Loss",
+        "game_end_otl": "Overtime loss"
+      }
+    }
+  },
+  "services": {
+    "simulate_event": {
+      "name": "Simulate event",
+      "description": "Fire a sample event so you can test automations without waiting for a game. Respects the Game alerts switch.",
+      "fields": {
+        "type": {
+          "name": "Event type",
+          "description": "Which event to fire."
+        },
+        "config_entry_id": {
+          "name": "Team",
+          "description": "Team to fire for. Leave empty for all followed teams."
+        },
+        "scorer_name": {
+          "name": "Scorer name",
+          "description": "Optional scorer name for goal events."
+        }
+      }
+    },
+    "refresh": {
+      "name": "Refresh",
+      "description": "Fetch the latest schedule, standings and game data now.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Team",
+          "description": "Team to refresh. Leave empty for all."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,189 @@
+"""Event detection from replayed snapshot sequences."""
+
+from __future__ import annotations
+
+from fake_nhl import FakeGame
+
+from custom_components.nhl_companion.event_detector import (
+    DetectorState,
+    EventDetector,
+    period_label,
+    strength_for,
+)
+from custom_components.nhl_companion.parser import parse_play_by_play
+
+BOS_PASTA, BOS_MCAVOY, BOS_GEEKIE = 8477956, 8479325, 8482072
+TOR_MATTHEWS, TOR_NYLANDER = 8479318, 8477939
+
+
+def types(events) -> list[str]:
+    return [e.type for e in events]
+
+
+def step(detector: EventDetector, game: FakeGame):
+    return detector.process(parse_play_by_play(game.play_by_play()))
+
+
+def test_full_game_sequence() -> None:
+    game = FakeGame()
+    det = EventDetector("BOS")
+    assert step(det, game) == []  # baseline
+
+    game.pregame()
+    assert step(det, game) == []
+
+    game.start_period(1)
+    assert types(step(det, game)) == ["game_start", "period_start"]
+
+    game.goal("BOS", BOS_PASTA, BOS_MCAVOY, BOS_GEEKIE, time_in_period="04:12")
+    (goal,) = step(det, game)
+    assert goal.type == "team_goal"
+    assert goal.data["scorer"]["name"] == "David Pastrnak"
+    assert goal.data["primary_assist"]["name"] == "Charlie McAvoy"
+    assert goal.data["secondary_assist"]["name"] == "Morgan Geekie"
+    assert goal.data["score"] == {"team": 1, "opponent": 0}
+    assert goal.data["time_in_period"] == "04:12"
+    assert goal.data["time_remaining"] == "15:48"
+    assert goal.data["period_label"] == "1st"
+    assert goal.data["strength"] == "ev"
+    assert goal.data["opponent_abbrev"] == "TOR"
+
+    game.penalty("TOR", TOR_NYLANDER, BOS_PASTA, desc="tripping")
+    (pen,) = step(det, game)
+    assert pen.type == "opponent_penalty"
+    assert pen.data["committed_by"]["name"] == "William Nylander"
+    assert pen.data["infraction"] == "Tripping"
+    assert pen.data["duration_min"] == 2
+
+    game.goal("TOR", TOR_MATTHEWS, situation="1551")
+    (opp,) = step(det, game)
+    assert opp.type == "opponent_goal"
+    assert opp.data["score"] == {"team": 1, "opponent": 1}
+
+    game.end_period(intermission=True)
+    assert types(step(det, game)) == ["period_end", "intermission_start"]
+
+    game.start_period(2)
+    assert types(step(det, game)) == ["period_start", "intermission_end"]
+
+    # No change, no events
+    assert step(det, game) == []
+
+    game.goal("BOS", BOS_GEEKIE)
+    game.final()
+    assert types(step(det, game)) == ["team_goal", "game_end_win"]
+    assert step(det, game) == []
+
+
+def test_goal_reversal_by_missing_play() -> None:
+    game = FakeGame()
+    game.start_period(1)
+    det = EventDetector("BOS")
+    step(det, game)
+    goal_id = game.goal("BOS", BOS_PASTA)
+    assert types(step(det, game)) == ["team_goal"]
+    game.remove_play(goal_id, "BOS")
+    (rev,) = step(det, game)
+    assert rev.type == "goal_reversed"
+    assert rev.data["side"] == "team"
+    assert rev.data["score"] == {"team": 0, "opponent": 0}
+
+
+def test_score_drop_without_missing_play() -> None:
+    game = FakeGame()
+    game.start_period(1)
+    game.goal("TOR", TOR_MATTHEWS)
+    det = EventDetector("BOS")
+    step(det, game)
+    game.score["TOR"] = 0
+    (rev,) = step(det, game)
+    assert rev.type == "goal_reversed"
+    assert rev.data["side"] == "opponent"
+
+
+def test_away_team_perspective_and_overtime_loss() -> None:
+    game = FakeGame(home="BOS", away="TOR")
+    game.start_period(1)
+    det = EventDetector("TOR")
+    step(det, game)
+    game.goal("BOS", BOS_PASTA)
+    game.goal("TOR", TOR_MATTHEWS)
+    events = step(det, game)
+    assert types(events) == ["opponent_goal", "team_goal"]
+    assert events[1].data["is_home"] is False
+    assert events[1].data["score"] == {"team": 1, "opponent": 1}
+    game.start_period(4, "OT")
+    game.goal("BOS", BOS_PASTA)
+    game.final("OT")
+    events = step(det, game)
+    assert types(events) == ["period_start", "opponent_goal", "game_end_otl"]
+    assert events[1].data["period_label"] == "OT"
+
+
+def test_baseline_mid_game_does_not_replay() -> None:
+    game = FakeGame()
+    game.start_period(1)
+    game.goal("BOS", BOS_PASTA)
+    game.goal("BOS", BOS_PASTA)
+    det = EventDetector("BOS")
+    assert step(det, game) == []
+    assert step(det, game) == []
+
+
+def test_baseline_after_final_is_silent() -> None:
+    game = FakeGame()
+    game.start_period(1)
+    game.final()
+    det = EventDetector("BOS")
+    assert step(det, game) == []
+    assert step(det, game) == []
+
+
+def test_state_round_trip_resumes_without_replay() -> None:
+    game = FakeGame()
+    game.start_period(1)
+    det = EventDetector("BOS")
+    step(det, game)
+    game.goal("BOS", BOS_PASTA)
+    step(det, game)
+
+    restored = EventDetector("BOS", DetectorState.from_dict(det.state.as_dict()))
+    assert step(restored, game) == []
+    game.goal("BOS", BOS_PASTA)
+    assert types(step(restored, game)) == ["team_goal"]
+
+
+def test_new_game_id_rebaselines() -> None:
+    first = FakeGame(game_id=1)
+    first.start_period(1)
+    det = EventDetector("BOS")
+    step(det, first)
+    second = FakeGame(game_id=2)
+    second.start_period(1)
+    second.goal("BOS", BOS_PASTA)
+    assert step(det, second) == []
+
+
+def test_untracked_team_ignored() -> None:
+    game = FakeGame()
+    assert EventDetector("EDM").process(parse_play_by_play(game.play_by_play())) == []
+
+
+def test_strength() -> None:
+    # away goalie, away skaters, home skaters, home goalie
+    assert strength_for("1551", True) == "ev"
+    assert strength_for("1451", True) == "pp"
+    assert strength_for("1451", False) == "sh"
+    assert strength_for("0651", True) == "en"
+    assert strength_for("1560", True) == "ev"  # home extra attacker, goalie pulled
+    assert strength_for(None, True) is None
+    assert strength_for("15", True) is None
+
+
+def test_period_label() -> None:
+    assert period_label(1, "REG") == "1st"
+    assert period_label(3, "REG") == "3rd"
+    assert period_label(4, "OT") == "OT"
+    assert period_label(5, "OT") == "2OT"
+    assert period_label(5, "SO") == "SO"
+    assert period_label(None, None) is None

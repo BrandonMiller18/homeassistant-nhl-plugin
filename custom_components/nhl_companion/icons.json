@@ -1,0 +1,33 @@
+{
+  "entity": {
+    "sensor": {
+      "game_status": { "default": "mdi:hockey-sticks" },
+      "team_score": { "default": "mdi:scoreboard" },
+      "opponent_score": { "default": "mdi:scoreboard-outline" },
+      "next_game": { "default": "mdi:calendar-clock" },
+      "last_game": { "default": "mdi:history" },
+      "standing": { "default": "mdi:format-list-numbered" }
+    },
+    "binary_sensor": {
+      "game_today": { "default": "mdi:calendar-star" },
+      "game_live": { "default": "mdi:hockey-puck" },
+      "power_play": { "default": "mdi:lightning-bolt" }
+    },
+    "switch": {
+      "game_alerts": {
+        "default": "mdi:bullhorn",
+        "state": { "off": "mdi:bullhorn-outline" }
+      }
+    },
+    "event": {
+      "goal_event": { "default": "mdi:alarm-light" },
+      "penalty_event": { "default": "mdi:whistle" },
+      "period_event": { "default": "mdi:timer-outline" },
+      "game_event": { "default": "mdi:hockey-sticks" }
+    }
+  },
+  "services": {
+    "simulate_event": { "service": "mdi:test-tube" },
+    "refresh": { "service": "mdi:refresh" }
+  }
+}

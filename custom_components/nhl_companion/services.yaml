@@ -1,0 +1,41 @@
+simulate_event:
+  fields:
+    type:
+      required: true
+      example: team_goal
+      selector:
+        select:
+          translation_key: event_type
+          options:
+            - team_goal
+            - opponent_goal
+            - goal_reversed
+            - team_penalty
+            - opponent_penalty
+            - period_start
+            - period_end
+            - intermission_start
+            - intermission_end
+            - game_day
+            - game_soon
+            - game_start
+            - game_end_win
+            - game_end_loss
+            - game_end_otl
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: nhl_companion
+    scorer_name:
+      required: false
+      example: David Pastrnak
+      selector:
+        text:
+refresh:
+  fields:
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: nhl_companion
