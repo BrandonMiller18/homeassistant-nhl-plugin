@@ -167,7 +167,7 @@ async def test_game_soon_and_game_day(
     assert len(events) == 2
 
 
-@pytest.mark.parametrize("evt_type", ["team_goal", "team_penalty", "game_end_win"])
+@pytest.mark.parametrize("evt_type", ["team_goal", "team_penalty", "game_end_win", "game_soon"])
 async def test_simulate_service(hass: HomeAssistant, mock_api, evt_type: str) -> None:
     entry = await setup_entry(hass)
     events = async_capture_events(hass, EVENT_NHL)
@@ -182,6 +182,9 @@ async def test_simulate_service(hass: HomeAssistant, mock_api, evt_type: str) ->
     assert data["config_entry_id"] == entry.entry_id
     if evt_type == "team_goal":
         assert data["scorer"]["name"] == "Bobby Orr"
+    if evt_type == "game_soon":
+        assert data["start_time_local"]
+        assert data["minutes_until_start"] >= 0
 
 
 async def test_simulate_respects_toggle(hass: HomeAssistant, mock_api) -> None:

@@ -1,0 +1,74 @@
+blueprint:
+  name: NHL Companion - Goal lights
+  description: >
+    Flash lights in your team's colors when your team scores, then restore
+    them to how they were.
+  domain: automation
+  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/goal_lights.yaml
+  input:
+    team:
+      name: Team
+      selector:
+        config_entry:
+          integration: nhl_companion
+    lights:
+      name: Lights
+      selector:
+        entity:
+          domain: light
+          multiple: true
+    color_1:
+      name: Primary color
+      default: [252, 181, 20]
+      selector:
+        color_rgb: {}
+    color_2:
+      name: Secondary color
+      default: [0, 0, 0]
+      selector:
+        color_rgb: {}
+    flashes:
+      name: Number of flashes
+      default: 8
+      selector:
+        number:
+          min: 1
+          max: 30
+mode: restart
+trigger:
+  - trigger: event
+    event_type: nhl_companion_event
+    event_data:
+      type: team_goal
+      config_entry_id: !input team
+variables:
+  lights: !input lights
+action:
+  - action: scene.create
+    data:
+      scene_id: nhl_companion_goal_lights_restore
+      snapshot_entities: "{{ lights }}"
+  - repeat:
+      count: !input flashes
+      sequence:
+        - action: light.turn_on
+          target:
+            entity_id: !input lights
+          data:
+            rgb_color: !input color_1
+            brightness_pct: 100
+            transition: 0
+        - delay:
+            milliseconds: 500
+        - action: light.turn_on
+          target:
+            entity_id: !input lights
+          data:
+            rgb_color: !input color_2
+            brightness_pct: 100
+            transition: 0
+        - delay:
+            milliseconds: 500
+  - action: scene.turn_on
+    target:
+      entity_id: scene.nhl_companion_goal_lights_restore

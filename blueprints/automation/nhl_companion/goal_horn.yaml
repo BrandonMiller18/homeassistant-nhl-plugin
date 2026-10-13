@@ -1,0 +1,84 @@
+blueprint:
+  name: NHL Companion - Goal horn
+  description: >
+    Play a goal horn on one or more speakers when your team scores, then
+    restore their previous volume. Respects the team's Game alerts switch.
+  domain: automation
+  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/goal_horn.yaml
+  input:
+    team:
+      name: Team
+      description: The NHL Companion team to listen to.
+      selector:
+        config_entry:
+          integration: nhl_companion
+    speakers:
+      name: Speakers
+      selector:
+        entity:
+          domain: media_player
+          multiple: true
+    horn_media:
+      name: Horn audio
+      description: >
+        A media-source:// URI (e.g. a file in /media) or an http(s) URL to an
+        mp3. Upload your team's horn under Media > My media.
+      selector:
+        text:
+    volume:
+      name: Horn volume
+      default: 0.6
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.05
+    duration:
+      name: Restore volume after
+      description: Seconds to wait before restoring the previous volume.
+      default: 20
+      selector:
+        number:
+          min: 5
+          max: 120
+          unit_of_measurement: s
+    extra_actions:
+      name: Extra actions (optional)
+      description: >
+        Anything else to run on a goal, e.g. show the scorer on a screen with
+        {{ trigger.event.data.scorer.name }}.
+      default: []
+      selector:
+        action: {}
+mode: restart
+trigger:
+  - trigger: event
+    event_type: nhl_companion_event
+    event_data:
+      type: team_goal
+      config_entry_id: !input team
+variables:
+  speakers: !input speakers
+action:
+  - action: scene.create
+    data:
+      scene_id: nhl_companion_goal_horn_restore
+      snapshot_entities: "{{ speakers }}"
+  - action: media_player.volume_set
+    target:
+      entity_id: !input speakers
+    data:
+      volume_level: !input volume
+  - action: media_player.play_media
+    target:
+      entity_id: !input speakers
+    data:
+      media_content_id: !input horn_media
+      media_content_type: music
+  - choose: []
+    default: !input extra_actions
+  - delay:
+      seconds: !input duration
+  - action: scene.turn_on
+    target:
+      entity_id: scene.nhl_companion_goal_horn_restore

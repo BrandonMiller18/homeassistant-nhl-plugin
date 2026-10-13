@@ -82,8 +82,8 @@ class DetectorState:
 
     game_id: int
     seen_ids: set[int] = field(default_factory=set)
-    # goal event_id -> scoring side ("team"/"opponent")
-    goals: dict[int, str] = field(default_factory=dict)
+    # goal event_id -> {side, scorer, period_label, time_in_period}
+    goals: dict[int, dict[str, Any]] = field(default_factory=dict)
     team_score: int = 0
     opponent_score: int = 0
     game_state: str | None = None
@@ -109,7 +109,10 @@ class DetectorState:
         return cls(
             game_id=int(data["game_id"]),
             seen_ids={int(i) for i in data.get("seen_ids", [])},
-            goals={int(k): v for k, v in (data.get("goals") or {}).items()},
+            goals={
+                int(k): v if isinstance(v, dict) else {"side": v}
+                for k, v in (data.get("goals") or {}).items()
+            },
             team_score=int(data.get("team_score", 0)),
             opponent_score=int(data.get("opponent_score", 0)),
             game_state=data.get("game_state"),
@@ -168,11 +171,18 @@ class EventDetector:
         # Goals that vanished from the feed were overturned
         reversed_ids = [gid for gid in state.goals if gid not in current_ids]
         for gid in reversed_ids:
-            side = state.goals.pop(gid)
+            goal = state.goals.pop(gid)
             events.append(
                 self._event(
                     EVT_GOAL_REVERSED,
-                    {**base, "side": side, "event_id": gid},
+                    {
+                        **base,
+                        "side": goal.get("side"),
+                        "event_id": gid,
+                        "scorer": goal.get("scorer"),
+                        "original_period_label": goal.get("period_label"),
+                        "original_time_in_period": goal.get("time_in_period"),
+                    },
                     f"{game.id}:{gid}:reversed",
                 )
             )
@@ -222,7 +232,12 @@ class EventDetector:
         )
         for play in snap.plays:
             if play.type_key == "goal":
-                state.goals[play.event_id] = "team" if play.owner_team_id == team.id else "opponent"
+                state.goals[play.event_id] = {
+                    "side": "team" if play.owner_team_id == team.id else "opponent",
+                    "scorer": self._player(snap, play.details.get("scoringPlayerId")),
+                    "period_label": period_label(play.period, play.period_type),
+                    "time_in_period": play.time_in_period,
+                }
         if game.state in LIVE_STATES | FINISHED_STATES:
             state.emitted.add("game_start")
         if game.state in FINISHED_STATES:
@@ -271,7 +286,6 @@ class EventDetector:
         key = f"{game.id}:{play.event_id}"
 
         if play.type_key == "goal":
-            self.state.goals[play.event_id] = "team" if is_team else "opponent"  # type: ignore[union-attr]
             scorer_is_home = is_home if is_team else not is_home
             payload = {
                 **play_base,
@@ -290,6 +304,12 @@ class EventDetector:
                     else {"team": away_score, "opponent": home_score}
                 )
             payload["empty_net"] = payload["strength"] == "en"
+            self.state.goals[play.event_id] = {  # type: ignore[union-attr]
+                "side": "team" if is_team else "opponent",
+                "scorer": payload["scorer"],
+                "period_label": play_base["period_label"],
+                "time_in_period": play.time_in_period,
+            }
             return self._event(EVT_TEAM_GOAL if is_team else EVT_OPPONENT_GOAL, payload, key)
 
         if play.type_key == "penalty":

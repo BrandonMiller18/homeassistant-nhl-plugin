@@ -1,0 +1,32 @@
+blueprint:
+  name: NHL Companion - Penalty alert
+  description: >
+    Run actions when a penalty is called (either team).
+  domain: automation
+  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/penalty_alert.yaml
+  input:
+    team:
+      name: Team
+      selector:
+        config_entry:
+          integration: nhl_companion
+    actions:
+      name: Actions
+      description: >
+        What to do. Event details are available in templates, e.g.
+        {{ trigger.event.data.committed_by.name }} - {{ trigger.event.data.infraction }} ({{ trigger.event.data.duration_min }} min)
+      selector:
+        action: {}
+mode: queued
+trigger:
+  - trigger: event
+    event_type: nhl_companion_event
+    event_data:
+      type: team_penalty
+      config_entry_id: !input team
+  - trigger: event
+    event_type: nhl_companion_event
+    event_data:
+      type: opponent_penalty
+      config_entry_id: !input team
+action: !input actions

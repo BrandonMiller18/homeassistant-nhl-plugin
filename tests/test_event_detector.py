@@ -87,6 +87,8 @@ def test_goal_reversal_by_missing_play() -> None:
     assert rev.type == "goal_reversed"
     assert rev.data["side"] == "team"
     assert rev.data["score"] == {"team": 0, "opponent": 0}
+    assert rev.data["scorer"]["name"] == "David Pastrnak"
+    assert rev.data["original_period_label"] == "1st"
 
 
 def test_score_drop_without_missing_play() -> None:
@@ -148,6 +150,7 @@ def test_state_round_trip_resumes_without_replay() -> None:
     step(det, game)
 
     restored = EventDetector("BOS", DetectorState.from_dict(det.state.as_dict()))
+    assert DetectorState.from_dict({"game_id": 1, "goals": {"5": "team"}}).goals == {5: {"side": "team"}}
     assert step(restored, game) == []
     game.goal("BOS", BOS_PASTA)
     assert types(step(restored, game)) == ["team_goal"]

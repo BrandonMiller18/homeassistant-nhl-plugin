@@ -1,5 +1,32 @@
 # NHL Companion for Home Assistant: Implementation Plan
 
+## Status (MVP built)
+
+Done: phases 0-6 below, using vanilla JS cards (no Lit build yet). Verified with 29 pytest tests and an end-to-end run on Home Assistant 2026.2.3. The run covered the real config/options flow, a scripted game served by `scripts/mock_nhl_server.py` (all 18 live events in order), the blueprints running against demo speakers and lights, and the cards rendered in Chromium at desktop and phone widths. Not yet verified: a real NHL game, because the build sandbox could not reach api-web.nhle.com.
+
+## MVP build pass
+
+The user asked for as much as possible, autonomously, ending in something they can install on their local HA and test. Blockers found during research:
+- This sandbox blocks `api-web.nhle.com`, `web.archive.org`, and WebFetch's resolver for the NHL host. PyPI and npm work.
+- dword4's `new-api.md` has no play-by-play sample, and `Zmalski/NHL-API-Reference` only lists endpoints.
+
+Workarounds:
+- Fixtures are hand-built from the documented schema and live in `tests/fixtures/`, each marked synthetic. `scripts/record_fixtures.py` lets the user replace them with real captures.
+- `parser.py` reads every field defensively with `.get()` and defaults, so a schema surprise degrades a field instead of crashing.
+- A hidden `api_base_url` option (default `https://api-web.nhle.com/v1`) plus `scripts/mock_nhl_server.py` let a real HA instance run end-to-end in the sandbox against a scripted game: pre-game, then a goal, a penalty, a period end, a reversal, and the final.
+
+Build order and MVP cuts:
+1. Scaffold: `hacs.json`, `manifest.json`, `pyproject.toml` (ruff + pytest config), `requirements_test.txt`, `.gitignore`, and CI workflows (hassfest, HACS validate, pytest).
+2. `const.py`, `models.py`, `parser.py`, `api.py`, `event_detector.py`, plus synthetic fixtures and unit tests.
+3. `coordinator.py` (league and team), `config_flow.py` (team picker plus options), `entity.py`, `sensor.py`, `binary_sensor.py`, `switch.py`, `event.py`, bus event, alert delay, `Store` dedupe, `services.yaml` (`simulate_event`, `refresh`), `diagnostics.py`, `websocket_api.py`, `frontend.py`, strings and translations.
+4. Cards: the MVP uses **vanilla custom elements in one plain JS file** (`www/nhl-companion-cards.js`) with no build step. Lit and TypeScript move to a later pass. Cards: schedule, standings, scoreboard, each with a simple stub config. The integration auto-registers the file through `async_register_static_paths` and `frontend.add_extra_js_url`.
+5. Blueprints: goal horn, goal lights, game reminder, penalty alert, win celebration.
+6. Tests: `pytest-homeassistant-custom-component` covering the parser, detector, config flow, entity setup, toggle gating, and simulate service.
+7. E2E smoke test: install `homeassistant` in a venv, run `hass -c` with the mock server, and confirm the integration loads, entities appear, and events fire. Done through the HA REST/websocket API with a long-lived token created in the onboarding flow, or via `hass --script check_config` if onboarding automation proves too fiddly.
+8. README with install steps (HACS custom repo, or manually copy `custom_components/nhl_companion`), entity and event reference, blueprint import links, and known gaps. Commit and push to `claude/dreamy-brown-85wb1v`.
+
+Deferred and listed in README "Known gaps": Lit/TS card rewrite with visual editors, a `game_day` time-of-day option beyond the default, real recorded fixtures, HACS default-store submission, and a landing-endpoint three-stars sensor.
+
 ## Context
 
 NHL Companion v1 is three hosted services: a DB-sync CLI that pulls `api-web.nhle.com/v1` into MySQL, a FastAPI read API on Heroku (`nhl-companion-api`), and a Next.js frontend on Vercel (`nhl-companion-frontend`). The frontend polls every 3 s and finds new plays by diffing `playIndex` (`app/live/[gameId]/page.tsx`). It flags `goal`, `penalty`, `period-start`, `period-end`, `game-end` as major plays (`lib/utils.ts:isMajorPlay`). Audio and webhook flags exist in `LiveGameConfig`, but the code never implements them.

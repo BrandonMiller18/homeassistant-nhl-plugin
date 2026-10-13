@@ -1,0 +1,27 @@
+blueprint:
+  name: NHL Companion - Goal announcement
+  description: >
+    Run any actions on a team goal with scorer details, e.g. show the scorer on a display or send a notification.
+  domain: automation
+  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/goal_announcement.yaml
+  input:
+    team:
+      name: Team
+      selector:
+        config_entry:
+          integration: nhl_companion
+    actions:
+      name: Actions
+      description: >
+        What to do. Event details are available in templates, e.g.
+        {{ trigger.event.data.scorer.name }} ({{ trigger.event.data.primary_assist.name if trigger.event.data.primary_assist else 'unassisted' }})
+      selector:
+        action: {}
+mode: queued
+trigger:
+  - trigger: event
+    event_type: nhl_companion_event
+    event_data:
+      type: team_goal
+      config_entry_id: !input team
+action: !input actions

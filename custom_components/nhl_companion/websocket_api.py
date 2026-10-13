@@ -49,7 +49,18 @@ async def ws_schedule(
             return
     else:
         days = league.data.schedule if league.data else []
-    connection.send_result(msg["id"], {"days": [d.as_dict() for d in days]})
+    # Team trackers poll live games far more often than the league schedule
+    fresh = {}
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        data = entry.runtime_data.team.data
+        if data and data.current_game:
+            fresh[data.current_game.id] = data.current_game
+    result = []
+    for day in days:
+        item = day.as_dict()
+        item["games"] = [fresh[g.id].as_dict() if g.id in fresh else g.as_dict() for g in day.games]
+        result.append(item)
+    connection.send_result(msg["id"], {"days": result})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/standings"})

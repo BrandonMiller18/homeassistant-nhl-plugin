@@ -457,6 +457,14 @@ class TeamCoordinator(DataUpdateCoordinator[TeamData]):
                 empty_net=False,
                 shot_type="wrist",
             )
+        if evt_type in (EVT_GAME_DAY, EVT_GAME_SOON):
+            start = game.start_utc if game and game.start_utc else dt_util.utcnow() + timedelta(minutes=30)
+            payload.update(
+                start_time=start.isoformat(),
+                start_time_local=_clock_time(dt_util.as_local(start)),
+                venue=game.venue if game else None,
+                minutes_until_start=max(0, round((start - dt_util.utcnow()).total_seconds() / 60)),
+            )
         if "penalty" in evt_type:
             payload.update(
                 committed_by=scorer,
