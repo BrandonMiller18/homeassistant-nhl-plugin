@@ -204,6 +204,29 @@ class FakeGame:
         if abbrev:
             self.score[abbrev] -= 1
 
+    def missed_shot(self, abbrev: str, shooter: int, time_in_period: str = "05:00") -> int:
+        return self._add_play(
+            "missed-shot",
+            {"shootingPlayerId": shooter, "eventOwnerTeamId": self.team_id(abbrev)},
+            time_in_period=time_in_period,
+        )
+
+    def convert_to_goal(self, event_id: int, abbrev: str, scorer: int) -> None:
+        """Turn an existing play into a goal in place, as the live feed did for a missed shot."""
+        self.score[abbrev] += 1
+        for play in self.plays:
+            if play["eventId"] == event_id:
+                play.update(typeCode=505, typeDescKey="goal")
+                details = play.setdefault("details", {})
+                details.pop("shootingPlayerId", None)
+                details.update(
+                    scoringPlayerId=scorer,
+                    scoringPlayerTotal=1,
+                    eventOwnerTeamId=self.team_id(abbrev),
+                    awayScore=self.score[self.away],
+                    homeScore=self.score[self.home],
+                )
+
     def amend(self, event_id: int, **details: Any) -> None:
         """Edit a play's details after it appeared, as the NHL does with assists."""
         for play in self.plays:

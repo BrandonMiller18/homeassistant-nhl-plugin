@@ -172,10 +172,12 @@ class EventDetector:
             events.append(self._event(EVT_GAME_START, base, f"{game.id}:game_start"))
 
         # New plays
-        current_ids = {p.event_id for p in snap.plays}
         new_ids: set[int] = set()
         for play in snap.plays:
-            if play.event_id in state.seen_ids:
+            # A seen play can turn into a goal later: live data showed a missed-shot
+            # become a goal (same eventId) one feed update after it first appeared.
+            became_goal = play.type_key == "goal" and play.event_id not in state.goals
+            if play.event_id in state.seen_ids and not became_goal:
                 continue
             state.seen_ids.add(play.event_id)
             new_ids.add(play.event_id)
@@ -186,8 +188,9 @@ class EventDetector:
         # Scorer or assists filled in or corrected after the goal was announced
         events.extend(self._goal_updates(snap, base, team, is_home, new_ids))
 
-        # Goals that vanished from the feed were overturned
-        reversed_ids = [gid for gid in state.goals if gid not in current_ids]
+        # Goals that vanished from the feed, or stopped being goals, were overturned
+        current_goal_ids = {p.event_id for p in snap.plays if p.type_key == "goal"}
+        reversed_ids = [gid for gid in state.goals if gid not in current_goal_ids]
         for gid in reversed_ids:
             goal = state.goals.pop(gid)
             events.append(

@@ -107,6 +107,43 @@ def test_assists_added_later_fire_goal_updated() -> None:
     assert upd.key != goal.key
 
 
+def test_play_that_turns_into_a_goal_fires_goal() -> None:
+    """Live STL@OTT 2026-10-13: eventId 755 went from missed-shot to goal in place."""
+    game = FakeGame()
+    game.start_period(1)
+    det = EventDetector("BOS")
+    step(det, game)
+
+    shot_id = game.missed_shot("TOR", TOR_MATTHEWS)
+    assert step(det, game) == []
+
+    game.convert_to_goal(shot_id, "TOR", TOR_MATTHEWS)
+    (goal,) = step(det, game)
+    assert goal.type == "opponent_goal"
+    assert goal.data["event_id"] == shot_id
+    assert goal.data["scorer"]["name"] == "Auston Matthews"
+    assert goal.data["score"] == {"team": 0, "opponent": 1}
+    assert step(det, game) == []
+
+
+def test_goal_that_stops_being_a_goal_is_reversed() -> None:
+    game = FakeGame()
+    game.start_period(1)
+    det = EventDetector("BOS")
+    step(det, game)
+    goal_id = game.goal("BOS", BOS_PASTA)
+    assert types(step(det, game)) == ["team_goal"]
+
+    for play in game.plays:
+        if play["eventId"] == goal_id:
+            play.update(typeDescKey="missed-shot", typeCode=507)
+    game.score["BOS"] -= 1
+    (rev,) = step(det, game)
+    assert rev.type == "goal_reversed"
+    assert rev.data["event_id"] == goal_id
+    assert rev.data["side"] == "team"
+
+
 def test_goal_updated_survives_restart_without_replaying() -> None:
     game = FakeGame()
     game.start_period(1)
