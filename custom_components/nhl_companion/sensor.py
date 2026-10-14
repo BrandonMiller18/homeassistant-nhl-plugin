@@ -110,6 +110,7 @@ class GameStatusSensor(NhlTeamEntity, SensorEntity):
             "team_sog": team.sog,
             "opponent_sog": opp.sog,
             "strength": data.strength,
+            "power_play_time_remaining": data.power_play_remaining,
             "last_goal": data.last_events.get("team_goal") or data.last_events.get("opponent_goal"),
         }
 

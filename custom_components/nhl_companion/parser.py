@@ -66,11 +66,28 @@ def parse_team_side(raw: dict[str, Any] | None) -> TeamSide:
     )
 
 
+def parse_situation(raw: Any) -> tuple[bool, str | None, str | None]:
+    """Parse the play-by-play "situation" block: (present, power play team, PP time left).
+
+    Example: {"homeTeam": {"abbrev": "OTT", "situationDescriptions": ["PP"], "strength": 5},
+    "awayTeam": {"abbrev": "STL", "strength": 4}, "situationCode": "1451", "timeRemaining": "02:00"}.
+    A delayed penalty shows "EN" (extra attacker), not "PP".
+    """
+    if not isinstance(raw, dict):
+        return False, None, None
+    for key in ("homeTeam", "awayTeam"):
+        side = raw.get(key) or {}
+        if "PP" in (side.get("situationDescriptions") or []):
+            return True, text(side.get("abbrev")), raw.get("timeRemaining")
+    return True, None, None
+
+
 def parse_game(raw: dict[str, Any]) -> Game:
     """Parse a game object (schedule, club schedule, score or play-by-play root)."""
     period = raw.get("periodDescriptor") or {}
     clock = raw.get("clock") or {}
     outcome = raw.get("gameOutcome") or {}
+    has_situation, pp_abbrev, pp_remaining = parse_situation(raw.get("situation"))
     return Game(
         id=_int(raw.get("id")) or 0,
         season=_int(raw.get("season")),
@@ -86,6 +103,9 @@ def parse_game(raw: dict[str, Any]) -> Game:
         clock=clock.get("timeRemaining"),
         in_intermission=bool(clock.get("inIntermission", False)),
         last_period_type=outcome.get("lastPeriodType"),
+        has_situation=has_situation,
+        power_play_abbrev=pp_abbrev,
+        power_play_remaining=pp_remaining,
     )
 
 

@@ -135,6 +135,7 @@ class TeamData:
     last_game: Game | None = None
     snapshot: GameSnapshot | None = None
     strength: str | None = None
+    power_play_remaining: str | None = None
     last_events: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
@@ -288,13 +289,9 @@ class TeamCoordinator(DataUpdateCoordinator[TeamData]):
         else:
             current = next_game
 
-        strength = None
-        if snapshot is not None and snapshot.game.state in LIVE_STATES and snapshot.plays:
-            sides = snapshot.game.side_for(self.team_abbrev)
-            if sides is not None:
-                strength = strength_for(snapshot.plays[-1].situation_code, sides[2])
-                if strength == "en":
-                    strength = "ev"
+        strength = pp_remaining = None
+        if snapshot is not None and snapshot.game.state in LIVE_STATES:
+            strength, pp_remaining = self._strength(snapshot)
 
         return TeamData(
             games=games,
@@ -303,8 +300,30 @@ class TeamCoordinator(DataUpdateCoordinator[TeamData]):
             last_game=last_game,
             snapshot=snapshot,
             strength=strength,
+            power_play_remaining=pp_remaining,
             last_events=previous.last_events,
         )
+
+    def _strength(self, snapshot: GameSnapshot) -> tuple[str | None, str | None]:
+        """Current strength (ev, pp, sh) and power play time left.
+
+        The feed's situation block names the power play team as soon as a penalty is
+        called. Without it, fall back to the last play's situationCode, which still shows
+        the skater counts from before the penalty until the next faceoff.
+        """
+        game = snapshot.game
+        sides = game.side_for(self.team_abbrev)
+        if sides is None:
+            return None, None
+        if game.has_situation:
+            if game.power_play_abbrev is None:
+                return "ev", None
+            strength = "pp" if game.power_play_abbrev == self.team_abbrev else "sh"
+            return strength, game.power_play_remaining
+        if not snapshot.plays:
+            return None, None
+        strength = strength_for(snapshot.plays[-1].situation_code, sides[2])
+        return ("ev" if strength == "en" else strength), None
 
     def _schedule_events(self, data: TeamData, now: datetime) -> list[NhlEvent]:
         game = data.next_game

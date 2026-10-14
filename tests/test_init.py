@@ -133,6 +133,50 @@ async def test_live_game_fires_events(
     assert [e.data["type"] for e in events[count:]] == ["opponent_goal", "game_end_win"]
 
 
+async def test_power_play_from_situation_block(
+    hass: HomeAssistant, mock_api, fake_game: FakeGame, freezer: FrozenDateTimeFactory
+) -> None:
+    """The situation block flips power play on as soon as the penalty is posted."""
+    freezer.move_to(datetime(2025, 11, 1, 23, 0, tzinfo=UTC))
+    fake_game.start = datetime(2025, 11, 1, 23, 5, tzinfo=UTC)
+    fake_game.start_period(1)
+    entry = await setup_entry(hass)
+    pp = entity_id(hass, entry, "binary_sensor", "power_play")
+    assert hass.states.get(pp).state == "off"
+
+    # Delayed penalty on TOR: BOS pulls its goalie for an extra attacker, not a power play
+    fake_game.delayed_penalty("TOR")
+    await advance(hass, freezer, 15)
+    assert hass.states.get(pp).state == "off"
+
+    # Penalty posted with the pre-penalty situationCode; the block already says PP
+    fake_game.penalty("TOR", MATTHEWS, PASTA)
+    fake_game.power_play("BOS", "02:00")
+    await advance(hass, freezer, 15)
+    state = hass.states.get(pp)
+    assert state.state == "on"
+    assert state.attributes["time_remaining"] == "02:00"
+    status = hass.states.get(entity_id(hass, entry, "sensor", "game_status"))
+    assert status.attributes["power_play_time_remaining"] == "02:00"
+
+    fake_game.power_play("TOR", "01:30")
+    await advance(hass, freezer, 15)
+    assert hass.states.get(pp).attributes["strength"] == "sh"
+
+    # Block gone and last play at even strength: back to even
+    fake_game.power_play(None)
+    fake_game.shot("BOS", PASTA)
+    await advance(hass, freezer, 15)
+    assert hass.states.get(pp).state == "off"
+    assert hass.states.get(pp).attributes["strength"] == "ev"
+
+    # Without the block, fall back to the last play's situationCode (home BOS 5 on 4)
+    fake_game.goal("TOR", MATTHEWS, situation="1451")
+    await advance(hass, freezer, 15)
+    assert hass.states.get(pp).state == "on"
+    assert hass.states.get(pp).attributes["time_remaining"] is None
+
+
 async def test_alert_delay_and_opponent_filter(
     hass: HomeAssistant, mock_api, fake_game: FakeGame, freezer: FrozenDateTimeFactory
 ) -> None:

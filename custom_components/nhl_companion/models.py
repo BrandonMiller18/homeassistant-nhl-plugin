@@ -37,6 +37,11 @@ class Game:
     clock: str | None = None
     in_intermission: bool = False
     last_period_type: str | None = None
+    # From the play-by-play "situation" block, which is only present when the teams
+    # are not at even strength (and occasionally drops out for one update)
+    has_situation: bool = False
+    power_play_abbrev: str | None = None
+    power_play_remaining: str | None = None
 
     def side_for(self, abbrev: str) -> tuple[TeamSide, TeamSide, bool] | None:
         """Return (team, opponent, is_home) for a team abbreviation."""

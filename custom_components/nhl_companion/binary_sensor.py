@@ -70,5 +70,6 @@ class PowerPlaySensor(NhlTeamEntity, BinarySensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, str | None]:
-        """Raw strength: ev, pp or sh."""
-        return {"strength": self.coordinator.data.strength}
+        """Raw strength (ev, pp or sh) and power play time left."""
+        data = self.coordinator.data
+        return {"strength": data.strength, "time_remaining": data.power_play_remaining}

@@ -82,6 +82,8 @@ class FakeGame:
         self.score = {home: 0, away: 0}
         self.sog = {home: 0, away: 0}
         self.last_period_type: str | None = None
+        # Root "situation" block; the real feed omits it at even strength
+        self.situation: dict[str, Any] | None = None
         self.plays: list[dict[str, Any]] = []
         self._next_event = 100
         self._sort = 0
@@ -191,6 +193,34 @@ class FakeGame:
         if drawn:
             details["drawnByPlayerId"] = drawn
         return self._add_play("penalty", details, "1551", time_in_period)
+
+    def delayed_penalty(self, abbrev: str, time_in_period: str = "07:45") -> int:
+        """Signal a delayed penalty on abbrev; the other side pulls its goalie."""
+        attacker_home = abbrev != self.home
+        self.situation = {
+            "awayTeam": {"abbrev": self.away, "strength": 5 if attacker_home else 6},
+            "homeTeam": {"abbrev": self.home, "strength": 6 if attacker_home else 5},
+            "situationCode": "1560" if attacker_home else "0651",
+        }
+        self.situation["awayTeam" if not attacker_home else "homeTeam"]["situationDescriptions"] = ["EN"]
+        return self._add_play(
+            "delayed-penalty", {"eventOwnerTeamId": self.team_id(abbrev)}, time_in_period=time_in_period
+        )
+
+    def power_play(self, abbrev: str | None, time_remaining: str = "02:00") -> None:
+        """Set the situation block: abbrev on a 5-on-4 power play, or None for even strength."""
+        if abbrev is None:
+            self.situation = None
+            return
+        pp_home = abbrev == self.home
+        self.situation = {
+            "awayTeam": {"abbrev": self.away, "strength": 4 if pp_home else 5},
+            "homeTeam": {"abbrev": self.home, "strength": 5 if pp_home else 4},
+            "situationCode": "1451" if pp_home else "1541",
+            "timeRemaining": time_remaining,
+            "secondsRemaining": int(time_remaining[:2]) * 60 + int(time_remaining[3:]),
+        }
+        self.situation["homeTeam" if pp_home else "awayTeam"]["situationDescriptions"] = ["PP"]
 
     def shot(self, abbrev: str, shooter: int) -> int:
         self.sog[abbrev] += 1
@@ -329,6 +359,8 @@ class FakeGame:
             "regPeriods": 3,
             "plays": deepcopy(self.plays),
         }
+        if self.situation is not None:
+            data["situation"] = deepcopy(self.situation)
         if self.last_period_type:
             data["gameOutcome"] = {"lastPeriodType": self.last_period_type}
         return data

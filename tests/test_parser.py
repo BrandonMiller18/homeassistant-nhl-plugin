@@ -43,6 +43,23 @@ def test_play_by_play_live_goal() -> None:
     assert snap.player(8477956).number == 88
 
 
+def test_situation_block() -> None:
+    game = FakeGame()
+    game.start_period(1)
+    assert parse_play_by_play(game.play_by_play()).game.has_situation is False
+
+    game.power_play("TOR", "01:35")
+    snap = parse_play_by_play(game.play_by_play())
+    assert snap.game.has_situation is True
+    assert snap.game.power_play_abbrev == "TOR"
+    assert snap.game.power_play_remaining == "01:35"
+
+    game.delayed_penalty("TOR")
+    snap = parse_play_by_play(game.play_by_play())
+    assert snap.game.has_situation is True
+    assert snap.game.power_play_abbrev is None
+
+
 def test_schedule_and_standings() -> None:
     game = FakeGame()
     days = parse_schedule(league_schedule([game], start=game.start))
