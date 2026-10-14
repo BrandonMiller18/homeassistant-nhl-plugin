@@ -21,7 +21,9 @@ REPO_URL = "https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/mai
 
 @pytest.mark.parametrize("path", SOURCES, ids=lambda p: p.name)
 def test_bundled_blueprint_is_valid(path: Path) -> None:
-    blueprint = Blueprint(load_yaml_dict(str(path)), expected_domain=path.parent.name, schema=BLUEPRINT_SCHEMA)
+    blueprint = Blueprint(
+        load_yaml_dict(str(path)), expected_domain=path.parent.name, schema=BLUEPRINT_SCHEMA
+    )
     rel = path.relative_to(COMPONENT.parent.parent).as_posix()
     assert blueprint.metadata["source_url"] == REPO_URL + rel
 
