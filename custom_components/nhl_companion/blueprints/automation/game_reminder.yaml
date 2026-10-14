@@ -1,9 +1,9 @@
 blueprint:
-  name: NHL Companion - Penalty alert
+  name: NHL Companion - Game reminder
   description: >
-    Run actions when a penalty is called (either team).
+    Run actions on game day and shortly before puck drop, e.g. a phone notification or a TTS announcement.
   domain: automation
-  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/penalty_alert.yaml
+  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/custom_components/nhl_companion/blueprints/automation/game_reminder.yaml
   input:
     team:
       name: Team
@@ -14,7 +14,7 @@ blueprint:
       name: Actions
       description: >
         What to do. Event details are available in templates, e.g.
-        {{ trigger.event.data.committed_by.name }} - {{ trigger.event.data.infraction }} ({{ trigger.event.data.duration_min }} min)
+        {{ trigger.event.data.team_name }} vs {{ trigger.event.data.opponent_name }} at {{ trigger.event.data.start_time_local }}
       selector:
         action: {}
 mode: queued
@@ -22,11 +22,11 @@ trigger:
   - trigger: event
     event_type: nhl_companion_event
     event_data:
-      type: team_penalty
+      type: game_day
       config_entry_id: !input team
   - trigger: event
     event_type: nhl_companion_event
     event_data:
-      type: opponent_penalty
+      type: game_soon
       config_entry_id: !input team
 action: !input actions

@@ -14,13 +14,10 @@ jobs:
 
   hacs:
     runs-on: ubuntu-latest
-    # The HACS action reads files through the GitHub API and gets nothing back
-    # while this repository is private. Make this blocking once it is public.
-    continue-on-error: true
     steps:
       - uses: hacs/action@main
         with:
           category: integration
-          # Repo settings (description, topics), license choice and brand images
-          # live outside the codebase; drop entries here as they are set up
-          ignore: brands description license topics
+          # No license chosen yet and no brand icon in home-assistant/brands;
+          # drop entries here as they are set up
+          ignore: brands license

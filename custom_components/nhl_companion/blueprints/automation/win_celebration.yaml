@@ -3,7 +3,7 @@ blueprint:
   description: >
     Run actions when your team wins.
   domain: automation
-  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/win_celebration.yaml
+  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/custom_components/nhl_companion/blueprints/automation/win_celebration.yaml
   input:
     team:
       name: Team

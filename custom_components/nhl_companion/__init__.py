@@ -16,6 +16,7 @@ from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
 
 from .api import NhlApiClient, NhlApiError
+from .blueprints import async_install_blueprints
 from .const import ALL_EVENTS, CONF_API_BASE_URL, DEFAULT_API_BASE_URL, DOMAIN, EVT_GOAL_HIGHLIGHT
 from .coordinator import STORAGE_VERSION, LeagueCoordinator, TeamCoordinator
 from .frontend import async_register_frontend
@@ -73,8 +74,9 @@ type NhlConfigEntry = ConfigEntry[NhlRuntimeData]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up domain-level pieces: cards, websocket commands, services."""
+    """Set up domain-level pieces: blueprints, cards, websocket commands, services."""
     hass.data.setdefault(DOMAIN, {"clients": {}, "leagues": {}})
+    await async_install_blueprints(hass)
     await async_register_frontend(hass)
     async_register_websocket(hass)
     _register_services(hass)

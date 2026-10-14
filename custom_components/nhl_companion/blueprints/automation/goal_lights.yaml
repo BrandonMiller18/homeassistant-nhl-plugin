@@ -5,7 +5,7 @@ blueprint:
     them to how they were. A failed flash (e.g. a busy Zigbee radio) is
     skipped rather than stopping the show, so the lights are always restored.
   domain: automation
-  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/goal_lights.yaml
+  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/custom_components/nhl_companion/blueprints/automation/goal_lights.yaml
   input:
     team:
       name: Team

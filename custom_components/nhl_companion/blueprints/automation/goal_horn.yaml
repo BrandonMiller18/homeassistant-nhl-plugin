@@ -4,7 +4,7 @@ blueprint:
     Play a goal horn on one or more speakers when your team scores, then
     restore their previous volume. Respects the team's Game alerts switch.
   domain: automation
-  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/goal_horn.yaml
+  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/custom_components/nhl_companion/blueprints/automation/goal_horn.yaml
   input:
     team:
       name: Team
