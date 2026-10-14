@@ -5,7 +5,8 @@ Usage:
 
 Then in Home Assistant: NHL Companion > Configure > "Advanced: NHL API base URL"
 set to http://<this-machine>:8765/v1. Each step advances the game: pre-game,
-puck drop, goals, a penalty, intermission, an overturned goal, and a final.
+puck drop, goals, a delayed penalty and power play, a goal whose assist is posted
+a step later, intermission, an overturned goal, and a final.
 Use --manual and POST /mock/next to advance by hand.
 """
 
@@ -35,17 +36,30 @@ def build_script(game: FakeGame, team: str, opp: str) -> list[tuple[str, Callabl
     def disallowed_goal() -> None:
         state["goal"] = game.goal(team, t[2][0], t[0][0], time_in_period="06:30")
 
+    def opponent_penalty() -> None:
+        # Posted with the pre-penalty situationCode; the situation block flips to PP at once
+        game.penalty(opp, o[1][0], t[0][0], "tripping", time_in_period="09:30")
+        game.power_play(team, "02:00")
+
+    def power_play_goal() -> None:
+        # Live feeds often post a goal without assists and add them a poll or two later
+        state["pp_goal"] = game.goal(team, t[1][0], situation="1451", time_in_period="10:45")
+        game.power_play(None)
+
     return [
         ("pre-game", game.pregame),
         ("puck drop: 1st period", lambda: game.start_period(1)),
         ("team goal", lambda: game.goal(team, t[0][0], t[1][0], t[2][0], time_in_period="04:12")),
-        ("opponent penalty", lambda: game.penalty(opp, o[1][0], t[0][0], "tripping", time_in_period="09:30")),
+        ("delayed penalty on opponent (extra attacker, not a power play)", lambda: game.delayed_penalty(opp)),
+        ("opponent penalty, team power play", opponent_penalty),
+        ("team power-play goal, assists not posted yet", power_play_goal),
         (
-            "team power-play goal",
-            lambda: game.goal(team, t[1][0], t[0][0], situation="1451", time_in_period="10:45"),
+            "assist added to the power-play goal",
+            lambda: game.amend(state["pp_goal"], assist1PlayerId=t[0][0]),
         ),
         ("opponent goal", lambda: game.goal(opp, o[0][0], o[1][0], time_in_period="15:02")),
         ("end of 1st, intermission", game.end_period),
+        ("intermission clock ends (puck drop about 2 minutes later)", game.end_intermission),
         ("2nd period starts", lambda: game.start_period(2)),
         ("team goal (will be overturned)", disallowed_goal),
         ("goal overturned on review", lambda: game.remove_play(state["goal"], team)),

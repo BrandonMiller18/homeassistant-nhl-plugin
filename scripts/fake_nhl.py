@@ -1,8 +1,10 @@
 """Synthetic NHL API payloads shaped like api-web.nhle.com/v1 responses.
 
-Used by the test suite and by mock_nhl_server.py. Field names follow the
-community docs (gitlab.com/dword4/nhlapi new-api.md, github.com/Zmalski/NHL-API-Reference).
-Replace with real captures via scripts/record_fixtures.py when possible.
+Used by the test suite and by mock_nhl_server.py. Shapes match a live game
+recorded on 2026-10-13 (STL@OTT, 2026020096; real captures in tests/fixtures/real/):
+typeCodes, the root "situation" block, penalties carrying the pre-penalty
+situationCode, and goals posted without their highlight clip. Real feeds also
+edit plays after posting them; use amend() and convert_to_goal() for that.
 """
 
 from __future__ import annotations
@@ -33,6 +35,26 @@ ROSTERS: dict[str, list[tuple[int, str, str, int, str]]] = {
         (8476853, "Morgan", "Rielly", 44, "D"),
         (8479361, "Joseph", "Woll", 60, "G"),
     ],
+}
+
+
+# typeDescKey -> typeCode as seen in live play-by-play
+TYPE_CODES: dict[str, int] = {
+    "faceoff": 502,
+    "hit": 503,
+    "giveaway": 504,
+    "goal": 505,
+    "shot-on-goal": 506,
+    "missed-shot": 507,
+    "blocked-shot": 508,
+    "penalty": 509,
+    "stoppage": 516,
+    "period-start": 520,
+    "period-end": 521,
+    "shootout-complete": 523,
+    "game-end": 524,
+    "takeaway": 525,
+    "delayed-penalty": 535,
 }
 
 
@@ -115,7 +137,7 @@ class FakeGame:
             "timeRemaining": f"{remaining // 60:02d}:{remaining % 60:02d}",
             "situationCode": situation,
             "homeTeamDefendingSide": "left",
-            "typeCode": 0,
+            "typeCode": TYPE_CODES.get(type_key, 0),
             "typeDescKey": type_key,
             "sortOrder": self._sort,
         }
@@ -166,7 +188,7 @@ class FakeGame:
             "homeSOG": self.sog[self.home],
             "awayScore": self.score[self.away],
             "homeScore": self.score[self.home],
-            "highlightClipSharingUrl": "https://nhl.com/video/example",
+            # The highlight URL arrives about 10 minutes later in live data
         }
         if assist1:
             details.update(assist1PlayerId=assist1, assist1PlayerTotal=20)
@@ -184,7 +206,10 @@ class FakeGame:
         time_in_period: str = "08:00",
     ) -> int:
         details: dict[str, Any] = {
-            "typeCode": "MIN",
+            "xCoord": -60,
+            "yCoord": 20,
+            "zoneCode": "D",
+            "typeCode": "MIN" if minutes == 2 else "MAJ",
             "descKey": desc,
             "duration": minutes,
             "committedByPlayerId": committed,
@@ -348,6 +373,7 @@ class FakeGame:
             ),
             "shootoutInUse": True,
             "otInUse": True,
+            "maxPeriods": 5,
             "clock": {
                 "timeRemaining": self.time_remaining,
                 "secondsRemaining": 0,
