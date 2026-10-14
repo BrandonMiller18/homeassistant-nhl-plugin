@@ -6,12 +6,14 @@ It talks directly to the public NHL web API (`api-web.nhle.com/v1`, community do
 
 ## Features
 
-- **Events for automations:** team/opponent goals with scorer, assists, strength (EV/PP/SH/EN) and score; overturned goals; penalties with player and infraction; period start/end; intermissions; game day; game starts soon; game start; win/loss/OT loss.
+- **Events for automations:** team/opponent goals with scorer, assists, strength (EV/PP/SH/EN) and score; corrected goal details (assists the NHL adds after the fact); goal videos; overturned goals; penalties with player and infraction; period start/end; intermissions; game day; game starts soon; game start; win/loss/OT loss.
+- **Goal videos on your TV:** the `nhl_companion.play_highlight` action plays the NHL's clip of a goal on any media player that takes a video URL (Chromecast, Apple TV, Fire TV, Kodi, most smart TVs), and a blueprint does it automatically when the clip is posted.
+- **Game stats:** shots, hits, blocks, faceoff %, penalty minutes, power play goals, a scoring summary and the three stars, for dashboards and small displays.
 - **Game alerts switch:** one toggle per team. Off means no events fire (no horn at 11pm), while scores keep updating.
 - **Broadcast delay:** hold events 0-180 s so the horn goes off when the goal shows on *your* TV or stream, not 30 s early.
-- **Entities:** game status, score, opponent score, next game, last game, standings points, game today, game live, power play.
+- **Entities:** game status (with stats), score, opponent score, shots on goal, next game, last game, standings points, game today, game live, power play (with time left).
 - **Dashboard cards:** scoreboard, league schedule, standings. Registered automatically, no resource setup.
-- **Blueprints:** goal horn (with volume restore), goal lights (flash team colors, then restore), goal announcement, penalty alert, game reminder, win celebration.
+- **Blueprints:** goal horn (with volume restore), goal lights (flash team colors, then restore), goal announcement, goal videos on a TV, penalty alert, game reminder, win celebration.
 - **Test without a game:** the `nhl_companion.simulate_event` action fires any event on demand.
 - Follow several teams: add the integration once per team.
 
@@ -38,7 +40,7 @@ Then open the integration's **Configure** to tune it:
 
 | Option | Default | What it does |
 |---|---|---|
-| Live polling interval | 10 s | How often play-by-play is checked during a game (min 5 s). |
+| Live polling interval | 10 s | Longest gap between play-by-play checks during a game (min 5 s). The NHL rebuilds the feed every 20 s behind a 19 s CDN cache, so the integration also polls about 1.5 s after each cached copy expires instead of up to 10 s later. Unchanged responses come back as an empty `304`. |
 | Alert delay | 0 s | Holds every event so it lines up with your broadcast. Start around 20-40 s for streaming. |
 | "Game starts soon" lead time | 30 min | When `game_soon` fires. |
 | Game day alert hour | 9 | Local hour `game_day` fires on game days. |
@@ -51,12 +53,13 @@ Shown for a team named "Boston Bruins". Entity IDs follow your team name.
 
 | Entity | State | Useful attributes |
 |---|---|---|
-| `sensor.boston_bruins_game_status` | `no_game`, `scheduled`, `pre_game`, `live`, `intermission`, `final`, `postponed` | opponent, is_home, start_time, venue, period_label, clock, team_score, opponent_score, SOG, strength, last_goal |
+| `sensor.boston_bruins_game_status` | `no_game`, `scheduled`, `pre_game`, `live`, `intermission`, `final`, `postponed` | opponent, is_home, start_time, venue, period_label, clock, team_score, opponent_score, SOG, strength, power_play_time_remaining, `team_stats` / `opponent_stats`, `goals` (scoring summary), `three_stars`, last_goal, last_goal_video |
 | `sensor.boston_bruins_score` / `_opponent_score` | goals in the current game | |
+| `sensor.boston_bruins_shots_on_goal` / `_opponent_shots_on_goal` | shots on goal in the current game | |
 | `sensor.boston_bruins_next_game` | puck drop (timestamp) | opponent, matchup (`vs TOR` / `@ TOR`), venue |
 | `sensor.boston_bruins_last_game` | e.g. `W 4-2`, `OTL 2-3 (OT)` | opponent, start_time |
 | `sensor.boston_bruins_standings_points` | points | record, ranks (league/conference/division/wildcard), streak, last 10 |
-| `binary_sensor.boston_bruins_game_today` / `_game_live` / `_power_play` | on/off | |
+| `binary_sensor.boston_bruins_game_today` / `_game_live` / `_power_play` | on/off | power play: `strength` (`ev`/`pp`/`sh`), `time_remaining` |
 | `switch.boston_bruins_game_alerts` | master on/off for events | |
 | `event.boston_bruins_goal` / `_penalty` / `_period` / `_game` | time of last event | `event_type` plus the full payload of the last event |
 
@@ -67,7 +70,7 @@ Every event is fired two ways with the same data:
 1. **Event entities** (`event.<team>_goal` and friends). Pick them in the automation editor (*When: Entity > event.boston_bruins_goal*), and show the last payload on dashboards.
 2. **Bus event** `nhl_companion_event`, with `type` set to one of:
 
-`team_goal`, `opponent_goal`, `goal_reversed`, `team_penalty`, `opponent_penalty`, `period_start`, `period_end`, `intermission_start`, `intermission_end`, `game_day`, `game_soon`, `game_start`, `game_end_win`, `game_end_loss`, `game_end_otl`
+`team_goal`, `opponent_goal`, `goal_updated`, `goal_highlight`, `goal_reversed`, `team_penalty`, `opponent_penalty`, `period_start`, `period_end`, `intermission_start`, `intermission_end`, `game_day`, `game_soon`, `game_start`, `game_end_win`, `game_end_loss`, `game_end_otl`
 
 Goal payload:
 
@@ -92,8 +95,12 @@ shot_type: wrist
 scorer: {id, name, first_name, last_name, number, position, headshot, season_total}
 primary_assist: {...} or null
 secondary_assist: {...} or null
-highlight_url: https://...
+highlight_url: null                # usually posted ~9 min later; see goal_highlight
 ```
+
+`goal_updated` repeats the goal payload with the corrected players, plus `side` (`team`/`opponent`) and `changed` (e.g. `[primary_assist]`). It fires when the NHL fills in or changes the scorer or an assist after the goal was announced. In live data that happened on most goals, 20-60 s after the goal.
+
+`goal_highlight` repeats the goal payload plus `side`, `clip_type` and `clip_id`, once per clip: `short` (a ~10 s goal clip, about 5 minutes after the goal) and `full` (a ~45 s highlight, about 7-9 minutes after). Pass `clip_id` to `nhl_companion.play_highlight`.
 
 Penalties add `committed_by`, `drawn_by`, `served_by`, `infraction` (e.g. `Hooking`), `penalty_type` (`MIN`, `MAJ`...) and `duration_min`. `goal_reversed` adds `side` (`team`/`opponent`), the original `scorer`, and `original_period_label` / `original_time_in_period`. `game_day` / `game_soon` add `start_time`, `start_time_local` (e.g. `7:00 PM`), `venue` and `minutes_until_start`.
 
@@ -118,9 +125,13 @@ actions:
 
 ### When things fire
 
+- Goals fire as soon as they appear in the feed, so the horn is not held back. A play the NHL first posts as a missed shot and turns into a goal (seen twice in one game) still fires the goal.
+- A penalty posted with only a placeholder infraction (`minor`, `major`) waits up to 6 polls for the real call. In live data these became `holding`, `fighting` (5-minute majors) or were deleted outright, so waiting avoids announcing penalties that never happened.
+- `intermission_end` fires when the intermission clock runs out, about 2 minutes before the next puck drop; `period_start` is the puck drop.
+- The game ends on the NHL's `OVER` state at the final horn, about 20 s before it switches to `FINAL`.
 - The first look at a game is a baseline. Setting up mid-game, or restarting HA, never replays old goals. Seen plays are saved per game, so a restart during a game picks up where it left off.
 - The game alerts switch gates everything. Goals scored while it is off are not replayed when it turns back on.
-- Play-by-play polling starts 15 minutes before puck drop and stops after the final. Otherwise the integration checks the schedule hourly (every 5 minutes on game days).
+- Play-by-play polling starts 15 minutes before puck drop and stops after the final. Otherwise the integration checks the schedule hourly (every 5 minutes on game days). After a final it checks for the three stars every 2 minutes until they are posted (about 2 minutes after the final in live data).
 
 ## Blueprints
 
@@ -130,7 +141,8 @@ Copy `blueprints/automation/nhl_companion/` into `/config/blueprints/automation/
 |---|---|
 | `goal_horn.yaml` | Snapshot speaker volume, set horn volume, play your horn file/URL, optional extra actions, restore volume. |
 | `goal_lights.yaml` | Snapshot lights, flash two team colors N times, restore. |
-| `goal_announcement.yaml` | Your own actions on a team goal (scorer data in templates). |
+| `goal_announcement.yaml` | Your own actions on a team goal (scorer data in templates). Optionally runs again on `goal_updated`, since assists often arrive 20-40 s after the goal. |
+| `goal_video.yaml` | Plays each goal's NHL video on your TV when it is posted (short clip ~5 min or full highlight ~9 min after the goal), optionally only while the TV is on. |
 | `penalty_alert.yaml` | Your own actions on any penalty. |
 | `game_reminder.yaml` | Your own actions on `game_day` and `game_soon`. |
 | `win_celebration.yaml` | Your own actions on a win. |
@@ -144,7 +156,24 @@ The cards load automatically. Add them through **Edit dashboard > Add card** (se
 ```yaml
 type: custom:nhl-scoreboard-card
 entity: sensor.boston_bruins_game_status
+show_stats: true                    # shots, hits, blocks, faceoff %, PIM, PP goals (default on)
+show_goals: false                   # scoring summary
+media_player: media_player.living_room_tv   # optional: adds a "Watch goal" button
 ```
+
+The scoreboard shows the power play team and time left, the last goal with corrected assists, and the three stars after the final.
+
+### Goal videos
+
+```yaml
+action: nhl_companion.play_highlight
+data:
+  entity_id: media_player.living_room_tv   # leave out to only get the URL back
+  clip_id: "{{ trigger.event.data.clip_id }}"   # leave out for the latest goal video
+  format: mp4                                # or hls
+```
+
+The action returns `url`, `title`, `duration_s` and `goal` as a response, so you can also send the link in a notification. Videos are NHL clips hosted on Brightcove; the stream URLs are signed and looked up each time the action runs.
 
 ```yaml
 type: custom:nhl-schedule-card
@@ -174,40 +203,66 @@ Followed teams are highlighted in the schedule and standings.
   python scripts/mock_nhl_server.py --team BOS --opponent TOR --step 20
   ```
 
-  Then set **Configure > NHL API base URL** to `http://<that-machine>:8765/v1`. Every 20 s the game advances through pre-game, puck drop, goals, a power play, intermission, an overturned goal and a win. Clear the field to go back to the real NHL API.
+  Then set **Configure > NHL API base URL** to `http://<that-machine>:8765/v1`. Every 20 s the game advances through pre-game, puck drop, goals, a delayed penalty and power play, an assist added after the goal, intermission, an overturned goal and a win. Clear the field to go back to the real NHL API.
 
 ## Development
 
 ```bash
 python -m venv venv && . venv/bin/activate
 pip install -r requirements_test.txt
-pytest            # 29 tests: parser, event detector, config flow, entities, services, websocket
+pytest            # 60 tests: parser, detector, stats, API client, replay of a real game, config flow, entities, services
 ruff check . && ruff format --check .
 ```
 
-Tests use synthetic payloads from `scripts/fake_nhl.py`, shaped after the community API docs. To add real captures (recommended), run `python scripts/record_fixtures.py --team BOS --game <game id>` from a machine with internet access. Files land in `tests/fixtures/real/` and are parsed by `tests/test_parser.py` automatically.
+Tests combine synthetic payloads from `scripts/fake_nhl.py` (shaped after a recorded live game) with real responses from STL @ OTT on 2026-10-13 (game 2026020096) in `tests/fixtures/real/`, and a replay of that game in `tests/fixtures/replay/`.
+
+To record another game and turn it into a replay test:
+
+```bash
+pip install aiohttp
+python scripts/record_live.py --team STL --out /tmp/live_stl --interval 10   # runs until 10 min after the final
+python scripts/trim_recording.py /tmp/live_stl --team STL --out tests/fixtures/replay/<name>.json.gz
+```
+
+`record_live.py` logs every play the NHL edits (`AMEND`) or deletes (`REMOVED`) and the events the integration would fire. It imports the integration package, so run it in the test venv.
 
 Layout:
 
 ```
 custom_components/nhl_companion/
-  api.py              NHL API client (shared per base URL, short response cache)
+  api.py              NHL API client (shared per base URL, ETag/304, CDN-aware polling, Brightcove clips)
   parser.py           raw JSON -> models; all knowledge of the NHL schema lives here
   event_detector.py   pure snapshot diff -> events (no HA imports)
+  stats.py            team stats and scoring summary from play-by-play
   coordinator.py      league + team coordinators, adaptive polling, event dispatch
   sensor.py, binary_sensor.py, switch.py, event.py
   config_flow.py, websocket_api.py, frontend.py, diagnostics.py
   www/nhl-companion-cards.js
 blueprints/automation/nhl_companion/
-scripts/  fake_nhl.py, mock_nhl_server.py, record_fixtures.py
+scripts/  fake_nhl.py, mock_nhl_server.py, record_fixtures.py, record_live.py, trim_recording.py
 ```
 
 ## Known gaps / next steps
 
-- Tested against Home Assistant 2026.2 with synthetic data and the mock server. It has **not yet seen a real NHL game**. The sandbox it was built in could not reach `api-web.nhle.com`. Field names follow the community docs, and the parser tolerates missing fields, but expect small fixes after the first real game. Diagnostics (*Download diagnostics* on the integration) capture what is needed to debug.
-- Strength (`pp`/`sh`) comes from the NHL `situationCode` skater counts. Delayed penalties and coincidental minors can look like a power play for a moment.
+Verified against one real game so far (STL 7-2 @ OTT, 2026-10-13, regulation). Not yet seen live:
+
+- **Overtime, shootouts and OT losses.** `period_label`, `game_end_otl` and `last_period_type` follow the documented `OT`/`SO` period types but have only run on synthetic data.
+- **An overturned goal.** No goal was challenged in the recorded game. `goal_reversed` fires when a goal disappears from the feed, stops being a goal, or the score drops, but the real shape of a reversal is unconfirmed.
+- **Empty-net goals.** Strength `en` comes from a goalie count of 0 in `situationCode`; no empty-net goal was scored in the recorded game.
+- **Playing a goal video on a real TV.** The clip lookup was tested against the live Brightcove API and `play_media` is called with a 720p MP4, but no physical Chromecast/Apple TV was used. The policy key comes from the NHL's public player config and could change without notice; the client refetches it once when Brightcove rejects it. How long the signed stream URLs stay valid is unknown, which is why they are looked up at play time.
+
+Known behaviour from the live data:
+
+- **Power play state follows the feed's own `situation` block,** which the NHL sometimes gets wrong for a moment: during a fight with placeholder penalties it showed the wrong team on a power play for ~40 s, and it occasionally drops out for one update. Without the block the integration falls back to the last play's skater counts, which lag a penalty until the next faceoff.
+- **`drawn_by` on penalties can be missing or wrong at first** and corrected 20-40 s later; there is no `penalty_updated` event.
+- **`shot_type` and `time_in_period` on goals can be corrected later** (e.g. wrist to backhand, 18:24 to 18:25) without a `goal_updated` event; only scorer and assist changes trigger one.
+- **Stats are counted from play-by-play** and matched the NHL boxscore except for one hit and one giveaway at the time of comparison.
+- **Videos arrive minutes after the goal** (short clip ~4-6 min, full highlight ~7-9 min, sometimes together), so they suit replays, not the goal horn.
+- **Broadcast delay is still manual.** How far the feed runs ahead of (or behind) a given TV or stream was not measured.
+
+Other:
+
 - Cards are plain JS without visual editors (YAML config only). A Lit/TypeScript rewrite with editors is planned.
 - No brand icon yet (needs a PR to `home-assistant/brands`).
-- The last goal shown on the scoreboard card is kept in memory, so it is blank after an HA restart until the next goal. The event entities keep their last payload across restarts.
 
 See `docs/IMPLEMENTATION_PLAN.md` for the full design.

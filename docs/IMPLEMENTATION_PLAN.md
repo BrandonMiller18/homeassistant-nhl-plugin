@@ -2,7 +2,7 @@
 
 ## Status (MVP built)
 
-Done: phases 0-6 below, using vanilla JS cards (no Lit build yet). Verified with 29 pytest tests and an end-to-end run on Home Assistant 2026.2.3. The run covered the real config/options flow, a scripted game served by `scripts/mock_nhl_server.py` (all 18 live events in order), the blueprints running against demo speakers and lights, and the cards rendered in Chromium at desktop and phone widths. Not yet verified: a real NHL game, because the build sandbox could not reach api-web.nhle.com.
+Done: phases 0-6 below, using vanilla JS cards (no Lit build yet). Verified with 29 pytest tests and an end-to-end run on Home Assistant 2026.2.3. The run covered the real config/options flow, a scripted game served by `scripts/mock_nhl_server.py` (all 18 live events in order), the blueprints running against demo speakers and lights, and the cards rendered in Chromium at desktop and phone widths. First real game (STL @ OTT, 2026-10-13) recorded live with `scripts/record_live.py` and replayed in `tests/test_replay.py`. It led to: conditional requests and CDN-aligned polling, `goal_updated` for late assists, detecting plays that turn into goals, holding placeholder penalties, power play from the `situation` block, the `OVER` game state, and the goal video and stats features. See README "Known gaps" for what is still unverified.
 
 ## MVP build pass
 
