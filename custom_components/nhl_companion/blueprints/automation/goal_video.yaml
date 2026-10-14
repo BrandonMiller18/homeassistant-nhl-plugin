@@ -6,7 +6,7 @@ blueprint:
     highlight (about 45 s) roughly 9 minutes after, so this is a replay, not a live horn.
     Works with players that accept a video URL (Chromecast, Apple TV, Fire TV, most smart TVs and Kodi).
   domain: automation
-  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/goal_video.yaml
+  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/custom_components/nhl_companion/blueprints/automation/goal_video.yaml
   input:
     team:
       name: Team

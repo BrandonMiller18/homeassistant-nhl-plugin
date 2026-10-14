@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Final
 
 DOMAIN: Final = "nhl_companion"
-VERSION: Final = "0.1.0"
+VERSION: Final = "0.2.0"
 
 DEFAULT_API_BASE_URL: Final = "https://api-web.nhle.com/v1"
 # NHL video clips (play-by-play highlightClip / discreteClip ids) are Brightcove videos

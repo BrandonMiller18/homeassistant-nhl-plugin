@@ -27,6 +27,13 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     return
 
 
+@pytest.fixture(autouse=True)
+def skip_blueprint_install() -> Generator[None]:
+    """Keep integration setup from writing blueprints into the shared test config dir."""
+    with patch("custom_components.nhl_companion.async_install_blueprints", return_value=[]):
+        yield
+
+
 class FakeApi:
     """Drives NhlApiClient methods from a FakeGame."""
 

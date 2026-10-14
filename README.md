@@ -19,13 +19,13 @@ It talks directly to the public NHL web API (`api-web.nhle.com/v1`, community do
 
 ## Install
 
-The repository is private, so HACS needs to be signed in to a GitHub account with access to it.
-
 ### Option A: HACS (custom repository)
 
 1. HACS > three-dot menu > **Custom repositories**.
 2. Repository: `https://github.com/BrandonMiller18/homeassistant-nhl-plugin`, type: **Integration**.
 3. Find **NHL Companion** in HACS, download, then restart Home Assistant.
+
+New releases then show up under **Settings > Updates** with their release notes. To try pre-releases, open NHL Companion in HACS, three-dot menu > **Redownload**, and turn on **Show beta versions**.
 
 ### Option B: manual copy
 
@@ -135,7 +135,9 @@ actions:
 
 ## Blueprints
 
-Copy `blueprints/automation/nhl_companion/` into `/config/blueprints/automation/nhl_companion/` (or, once the repo is public, use **Settings > Automations > Blueprints > Import** with the file's GitHub URL), then **Reload automations**.
+The blueprints ship with the integration. On every start it copies them into `/config/blueprints/automation/nhl_companion/`, so they appear under **Settings > Automations > Blueprints** after the first restart and update along with the integration.
+
+Those files are managed: edits made to them in Home Assistant are overwritten on the next start. To customize one, duplicate it under another folder first, or use **Take control** on an automation built from it.
 
 | Blueprint | Does |
 |---|---|
@@ -210,9 +212,35 @@ Followed teams are highlighted in the schedule and standings.
 ```bash
 python -m venv venv && . venv/bin/activate
 pip install -r requirements_test.txt
-pytest            # 60 tests: parser, detector, stats, API client, replay of a real game, config flow, entities, services
+pytest            # parser, detector, stats, API client, replay of a real game, config flow, entities, services, blueprints
 ruff check . && ruff format --check .
 ```
+
+The test suite needs Linux or macOS (Home Assistant does not install on Windows); on Windows use WSL or rely on CI.
+
+### Making a change
+
+1. Branch off `main`, commit, push, open a pull request. CI (tests, ruff, hassfest, HACS validation) must pass before merging.
+2. To try the change on a real Home Assistant before releasing, publish a pre-release (below) with a `b` version and install it through HACS with beta versions on.
+
+### Releasing
+
+1. On a branch, bump the version in `manifest.json` and `const.py` together:
+
+   ```bash
+   python scripts/bump_version.py 0.3.0      # 0.3.0b1 for a pre-release
+   ```
+
+2. Merge the pull request, then tag the merge commit on `main` and push the tag:
+
+   ```bash
+   git switch main && git pull
+   git tag v0.3.0 && git push origin v0.3.0
+   ```
+
+3. The **Release** workflow checks that the tag matches `manifest.json` and is on `main`, runs the tests, and publishes a GitHub release with generated notes (a pre-release for `a`/`b`/`rc` versions). HACS offers it in Home Assistant within a few hours, or straight away after **HACS > three-dot menu > Update information** on the repository.
+
+Blueprint changes ride along: they live in `custom_components/nhl_companion/blueprints/` and are reinstalled on the next start after an update.
 
 Tests combine synthetic payloads from `scripts/fake_nhl.py` (shaped after a recorded live game) with real responses from STL @ OTT on 2026-10-13 (game 2026020096) in `tests/fixtures/real/`, and a replay of that game in `tests/fixtures/replay/`.
 
@@ -237,9 +265,10 @@ custom_components/nhl_companion/
   coordinator.py      league + team coordinators, adaptive polling, event dispatch
   sensor.py, binary_sensor.py, switch.py, event.py
   config_flow.py, websocket_api.py, frontend.py, diagnostics.py
+  blueprints.py       copies blueprints/ into /config/blueprints on startup
+  blueprints/automation/*.yaml
   www/nhl-companion-cards.js
-blueprints/automation/nhl_companion/
-scripts/  fake_nhl.py, mock_nhl_server.py, record_fixtures.py, record_live.py, trim_recording.py
+scripts/  bump_version.py, fake_nhl.py, mock_nhl_server.py, record_fixtures.py, record_live.py, trim_recording.py
 ```
 
 ## Known gaps / next steps

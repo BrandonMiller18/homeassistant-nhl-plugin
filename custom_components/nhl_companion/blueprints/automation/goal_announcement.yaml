@@ -5,7 +5,7 @@ blueprint:
     The NHL usually adds assists 20-40 s after a goal first appears, so the first goal event often has none.
     Turn on "Also run on corrections" to run again with the corrected scorer and assists.
   domain: automation
-  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/goal_announcement.yaml
+  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/custom_components/nhl_companion/blueprints/automation/goal_announcement.yaml
   input:
     team:
       name: Team
