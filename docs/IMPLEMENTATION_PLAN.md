@@ -1,3 +1,10 @@
+---
+type: Plan
+title: Implementation plan (historical)
+description: Original v2 design and MVP build log; superseded where it conflicts with the concept docs or code.
+status: deprecated
+generated: {by: claude/opus-5.5, at: 2026-10-14T05:41:07Z}
+---
 # NHL Companion for Home Assistant: Implementation Plan
 
 ## Status (MVP built)
