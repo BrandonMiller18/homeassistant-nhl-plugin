@@ -45,6 +45,11 @@ class FakeApi:
     async def get_standings(self):
         return parse_standings(standings())
 
+    async def get_three_stars(self, game_id):
+        return self.three_stars
+
+    three_stars: list = []
+
 
 @pytest.fixture
 def fake_game() -> FakeGame:
@@ -62,5 +67,6 @@ def mock_api(fake_game: FakeGame) -> Generator[FakeApi]:
         patch(f"{target}.get_play_by_play", side_effect=api.get_play_by_play),
         patch(f"{target}.get_schedule", side_effect=api.get_schedule),
         patch(f"{target}.get_standings", side_effect=api.get_standings),
+        patch(f"{target}.get_three_stars", side_effect=api.get_three_stars),
     ):
         yield api

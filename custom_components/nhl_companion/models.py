@@ -59,6 +59,22 @@ class Game:
 
 
 @dataclass(slots=True)
+class Clip:
+    """A playable NHL video clip."""
+
+    id: str
+    title: str | None
+    duration_s: float | None
+    mp4: str | None
+    hls: str | None
+    poster: str | None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Serialize for service responses."""
+        return asdict(self)
+
+
+@dataclass(slots=True)
 class Player:
     """A rostered player in a game."""
 

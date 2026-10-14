@@ -10,6 +10,7 @@ simulate_event:
             - team_goal
             - opponent_goal
             - goal_updated
+            - goal_highlight
             - goal_reversed
             - team_penalty
             - opponent_penalty
@@ -40,3 +41,29 @@ refresh:
       selector:
         config_entry:
           integration: nhl_companion
+play_highlight:
+  fields:
+    entity_id:
+      required: false
+      selector:
+        entity:
+          domain: media_player
+          multiple: true
+    config_entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: nhl_companion
+    clip_id:
+      required: false
+      example: "6406808612112"
+      selector:
+        text:
+    format:
+      required: false
+      default: mp4
+      selector:
+        select:
+          options:
+            - mp4
+            - hls

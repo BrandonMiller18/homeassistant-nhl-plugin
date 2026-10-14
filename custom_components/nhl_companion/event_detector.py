@@ -14,6 +14,7 @@ from .const import (
     EVT_GAME_END_OTL,
     EVT_GAME_END_WIN,
     EVT_GAME_START,
+    EVT_GOAL_HIGHLIGHT,
     EVT_GOAL_REVERSED,
     EVT_GOAL_UPDATED,
     EVT_INTERMISSION_END,
@@ -43,6 +44,16 @@ GOAL_PLAYER_FIELDS = (
 # with the real call one update later. Such penalties wait up to this many polls.
 PLACEHOLDER_INFRACTIONS = {"minor", "major", "penalty"}
 MAX_PENALTY_HOLD_POLLS = 6
+
+
+# Video clips posted on goals, in the order they arrive in live data: a ~10 s goal clip
+# about 5 minutes after the goal, then a ~45 s highlight about 9 minutes after.
+GOAL_CLIPS = (("short", "discreteClip"), ("full", "highlightClip"))
+
+
+def goal_clips(details: dict[str, Any]) -> list[str]:
+    """Clip types already posted on a goal."""
+    return [name for name, key in GOAL_CLIPS if details.get(key)]
 
 
 def goal_players(details: dict[str, Any]) -> list[int | None]:
@@ -202,6 +213,7 @@ class EventDetector:
 
         # Scorer or assists filled in or corrected after the goal was announced
         events.extend(self._goal_updates(snap, base, team, is_home, new_ids))
+        events.extend(self._goal_highlights(snap, base, team, is_home))
 
         # Goals that vanished from the feed, or stopped being goals, were overturned
         current_goal_ids = {p.event_id for p in snap.plays if p.type_key == "goal"}
@@ -272,6 +284,7 @@ class EventDetector:
                     "side": "team" if play.owner_team_id == team.id else "opponent",
                     "scorer": self._player(snap, play.details.get("scoringPlayerId")),
                     "players": goal_players(play.details),
+                    "clips": goal_clips(play.details),
                     "period_label": period_label(play.period, play.period_type),
                     "time_in_period": play.time_in_period,
                 }
@@ -358,6 +371,40 @@ class EventDetector:
             )
         return events
 
+    def _goal_highlights(
+        self, snap: GameSnapshot, base: dict[str, Any], team: TeamSide, is_home: bool
+    ) -> list[NhlEvent]:
+        """Goals whose video clip was just posted (minutes after the goal)."""
+        state = self.state
+        assert state is not None
+        events: list[NhlEvent] = []
+        for play in snap.plays:
+            goal = state.goals.get(play.event_id)
+            if play.type_key != "goal" or goal is None:
+                continue
+            posted = goal_clips(play.details)
+            if "clips" not in goal:
+                # State saved before clips were tracked: never replay old clips
+                goal["clips"] = posted
+                continue
+            is_team = play.owner_team_id is not None and play.owner_team_id == team.id
+            for clip_type, key in GOAL_CLIPS:
+                if clip_type not in posted or clip_type in goal["clips"]:
+                    continue
+                goal["clips"].append(clip_type)
+                payload = self._goal_payload(snap, play, self._play_base(base, play), is_team, is_home)
+                payload.update(
+                    side="team" if is_team else "opponent",
+                    clip_type=clip_type,
+                    clip_id=str(play.details[key]),
+                )
+                events.append(
+                    self._event(
+                        EVT_GOAL_HIGHLIGHT, payload, f"{snap.game.id}:{play.event_id}:clip:{clip_type}"
+                    )
+                )
+        return events
+
     def _hold_penalty(self, play: Play) -> bool:
         """Wait a few polls for a penalty whose infraction is only "minor" or "major"."""
         state = self.state
@@ -406,6 +453,7 @@ class EventDetector:
                 "side": "team" if is_team else "opponent",
                 "scorer": payload["scorer"],
                 "players": goal_players(d),
+                "clips": [],
                 "period_label": play_base["period_label"],
                 "time_in_period": play.time_in_period,
             }

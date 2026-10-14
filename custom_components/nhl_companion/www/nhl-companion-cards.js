@@ -1,6 +1,6 @@
 /*
  * NHL Companion Lovelace cards. No build step: plain custom elements.
- *   custom:nhl-scoreboard-card  - live score for a followed team
+ *   custom:nhl-scoreboard-card  - live score, stats, goals, three stars and goal videos
  *   custom:nhl-schedule-card    - league schedule (today or the week)
  *   custom:nhl-standings-card   - division / conference / league standings
  */
@@ -112,6 +112,13 @@ class NhlScoreboardCard extends NhlBaseCard {
       .goal b { color: var(--primary-text-color); }
       .pp { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: 0.8em;
             background: var(--warning-color, #ffa600); color: #000; }
+      .section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--divider-color); font-size: 0.95em; }
+      table.stats { width: 100%; border-collapse: collapse; }
+      table.stats td { padding: 2px 4px; text-align: center; }
+      table.stats td.label { color: var(--secondary-text-color); font-size: 0.85em; }
+      .goals div, .stars div { padding: 2px 0; }
+      button.watch { margin-top: 8px; padding: 6px 12px; border: 0; border-radius: 6px; cursor: pointer;
+                     background: var(--primary-color); color: var(--text-primary-color, #fff); font: inherit; }
     `;
   }
   _render() {
@@ -132,7 +139,11 @@ class NhlScoreboardCard extends NhlBaseCard {
     let status;
     if (st.state === "live") {
       status = `<span class="live">${esc(a.period_label || "")} ${esc(a.clock || "")}</span>`;
-      if (a.strength === "pp") status += `<span class="pp">PP</span>`;
+      if (a.strength === "pp" || a.strength === "sh") {
+        const who = a.strength === "pp" ? a.team_abbrev : a.opponent_abbrev;
+        const left = a.power_play_time_remaining ? ` ${esc(a.power_play_time_remaining)}` : "";
+        status += `<span class="pp">${esc(who)} PP${left}</span>`;
+      }
     } else if (st.state === "intermission") {
       status = `<span class="live">${esc(a.period_label || "")} intermission</span>`;
     } else if (st.state === "final") {
@@ -154,15 +165,64 @@ class NhlScoreboardCard extends NhlBaseCard {
         ${started && t.sog != null ? `<div class="sog muted">SOG ${esc(t.sog)}</div>` : ""}
       </div>`;
 
-    const g = a.last_goal;
+    const sideAbbrev = (s) => (s === "team" ? a.team_abbrev : a.opponent_abbrev);
+    const strengthTag = (s) => (s && s !== "ev" ? ` (${esc(s.toUpperCase())})` : "");
+    // The scoring summary is rebuilt from play-by-play each poll, so it has late assists
+    const goals = Array.isArray(a.goals) ? a.goals : [];
     let goal = "";
-    if (g && g.scorer && g.game_id === a.game_id) {
+    const last = goals[goals.length - 1];
+    const g = a.last_goal;
+    if (last && last.scorer) {
+      goal = `<div class="goal"><span class="muted">Last goal · ${esc(sideAbbrev(last.side))}</span><br>
+        <b>${esc(last.scorer)}</b>${strengthTag(last.strength)}
+        <span class="muted"> · ${last.assists.length ? last.assists.map(esc).join(", ") : "unassisted"}</span>
+        <span class="muted"> · ${esc(last.period_label || "")} ${esc(last.time_in_period || "")}</span></div>`;
+    } else if (g && g.scorer && g.game_id === a.game_id) {
       const assists = [g.primary_assist, g.secondary_assist].filter(Boolean).map((p) => esc(p.name)).join(", ");
-      const strength = g.strength && g.strength !== "ev" ? ` (${esc(g.strength.toUpperCase())})` : "";
       goal = `<div class="goal"><span class="muted">Last goal · ${esc(g.type === "opponent_goal" ? g.opponent_abbrev : g.team_abbrev)}</span><br>
-        <b>${esc(g.scorer.name)}</b>${g.scorer.season_total ? ` (${esc(g.scorer.season_total)})` : ""}${strength}
-        ${assists ? `<span class="muted"> · ${assists}</span>` : `<span class="muted"> · unassisted</span>`}
+        <b>${esc(g.scorer.name)}</b>${g.scorer.season_total ? ` (${esc(g.scorer.season_total)})` : ""}${strengthTag(g.strength)}
+        <span class="muted"> · ${assists || "unassisted"}</span>
         <span class="muted"> · ${esc(g.period_label || "")} ${esc(g.time_in_period || "")}</span></div>`;
+    }
+    if (goal && this._config.media_player && a.last_goal_video) {
+      goal = goal.replace(/<\/div>$/, `<br><button class="watch">▶ Watch goal</button></div>`);
+    }
+
+    let stats = "";
+    const ts = a.team_stats;
+    const os = a.opponent_stats;
+    if (started && ts && os && this._config.show_stats !== false) {
+      const awayS = a.is_home ? os : ts;
+      const homeS = a.is_home ? ts : os;
+      const rows = [
+        ["Shots", "shots_on_goal"],
+        ["Hits", "hits"],
+        ["Blocks", "blocked_shots"],
+        ["Faceoff %", "faceoff_pct"],
+        ["PIM", "penalty_minutes"],
+        ["PP goals", "power_play_goals"],
+      ]
+        .map(([label, k]) => `<tr><td>${esc(awayS[k] ?? "–")}</td><td class="label">${label}</td><td>${esc(homeS[k] ?? "–")}</td></tr>`)
+        .join("");
+      stats = `<div class="section"><table class="stats">${rows}</table></div>`;
+    }
+
+    let summary = "";
+    if (this._config.show_goals && goals.length) {
+      summary = `<div class="section goals">${goals
+        .map(
+          (x) => `<div><span class="muted">${esc(x.period_label)} ${esc(x.time_in_period)}</span>
+            <b>${esc(sideAbbrev(x.side))}</b> ${esc(x.scorer)}${strengthTag(x.strength)}
+            <span class="muted">${x.assists.length ? `(${x.assists.map(esc).join(", ")})` : "(unassisted)"}</span></div>`,
+        )
+        .join("")}</div>`;
+    }
+
+    let stars = "";
+    if (st.state === "final" && Array.isArray(a.three_stars) && a.three_stars.length) {
+      stars = `<div class="section stars"><span class="muted">Three stars</span>${a.three_stars
+        .map((s) => `<div>${"★".repeat(s.star || 1)} <b>${esc(s.name)}</b> <span class="muted">${esc(s.team_abbrev || "")}</span></div>`)
+        .join("")}</div>`;
     }
 
     this._shell(`
@@ -175,7 +235,16 @@ class NhlScoreboardCard extends NhlBaseCard {
         </div>
         ${side(home)}
       </div>
-      ${goal}`);
+      ${goal}${stats}${summary}${stars}`);
+    const watch = this.shadowRoot.querySelector("button.watch");
+    if (watch) {
+      watch.addEventListener("click", () =>
+        this._hass.callService("nhl_companion", "play_highlight", {
+          entity_id: this._config.media_player,
+          clip_id: a.last_goal_video.clip_id,
+        }),
+      );
+    }
   }
 }
 

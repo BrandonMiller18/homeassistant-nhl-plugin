@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from .const import LOGO_URL_TEMPLATE, TEAMS
-from .models import Game, GameSnapshot, Play, Player, ScheduleDay, Standing, TeamSide
+from .models import Clip, Game, GameSnapshot, Play, Player, ScheduleDay, Standing, TeamSide
 
 
 def text(value: Any) -> str | None:
@@ -210,3 +210,56 @@ def parse_standings(raw: dict[str, Any]) -> list[Standing]:
         )
     rows.sort(key=lambda s: (s.league_rank is None, s.league_rank or 0))
     return rows
+
+
+def parse_three_stars(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parse summary.threeStars from /gamecenter/{id}/landing (empty until after the final)."""
+    stars = []
+    for row in (raw.get("summary") or {}).get("threeStars") or []:
+        if not isinstance(row, dict):
+            continue
+        stars.append(
+            {
+                "star": _int(row.get("star")),
+                "id": _int(row.get("playerId")),
+                "name": text(row.get("name")),
+                "team_abbrev": text(row.get("teamAbbrev")),
+                "number": _int(row.get("sweaterNo")),
+                "position": row.get("position"),
+                "headshot": row.get("headshot"),
+                "goals": _int(row.get("goals")),
+                "assists": _int(row.get("assists")),
+                "points": _int(row.get("points")),
+                "save_pct": _float(row.get("savePctg")),
+                "goals_against_avg": _float(row.get("goalsAgainstAverage")),
+            }
+        )
+    stars.sort(key=lambda s: s["star"] or 9)
+    return stars
+
+
+def parse_clip(raw: dict[str, Any]) -> Clip:
+    """Parse a Brightcove Playback API video: prefer the largest HTTPS MP4 and HTTPS HLS."""
+    mp4s = [
+        s
+        for s in raw.get("sources") or []
+        if s.get("container") == "MP4" and str(s.get("src", "")).startswith("https://")
+    ]
+    mp4s.sort(key=lambda s: _int(s.get("height")) or 0, reverse=True)
+    hls = next(
+        (
+            s["src"]
+            for s in raw.get("sources") or []
+            if s.get("type") == "application/x-mpegURL" and str(s.get("src", "")).startswith("https://")
+        ),
+        None,
+    )
+    duration = _float(raw.get("duration"))
+    return Clip(
+        id=str(raw.get("id") or ""),
+        title=raw.get("name"),
+        duration_s=round(duration / 1000, 1) if duration else None,
+        mp4=mp4s[0]["src"] if mp4s else None,
+        hls=hls,
+        poster=raw.get("poster"),
+    )

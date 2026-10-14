@@ -45,6 +45,14 @@ def game_status(game: Game | None) -> str:
     return "scheduled"
 
 
+def _latest(
+    events: dict[str, dict[str, Any]], types: tuple[str, ...], game_id: int | None = None
+) -> dict[str, Any] | None:
+    """Most recently fired event payload of the given types (optionally for one game)."""
+    found = [e for t in types if (e := events.get(t)) and (game_id is None or e.get("game_id") == game_id)]
+    return max(found, key=lambda e: e.get("fired_at") or "", default=None)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: NhlConfigEntry,
@@ -58,6 +66,8 @@ async def async_setup_entry(
             GameStatusSensor(team),
             ScoreSensor(team, "team_score", own=True),
             ScoreSensor(team, "opponent_score", own=False),
+            ShotsSensor(team, "team_shots", own=True),
+            ShotsSensor(team, "opponent_shots", own=False),
             NextGameSensor(team),
             LastGameSensor(team),
             StandingSensor(league, team),
@@ -111,7 +121,12 @@ class GameStatusSensor(NhlTeamEntity, SensorEntity):
             "opponent_sog": opp.sog,
             "strength": data.strength,
             "power_play_time_remaining": data.power_play_remaining,
-            "last_goal": data.last_events.get("team_goal") or data.last_events.get("opponent_goal"),
+            "team_stats": data.stats["team"] if data.stats else None,
+            "opponent_stats": data.stats["opponent"] if data.stats else None,
+            "goals": data.stats["goals"] if data.stats else [],
+            "three_stars": data.three_stars,
+            "last_goal": _latest(data.last_events, ("team_goal", "opponent_goal", "goal_updated")),
+            "last_goal_video": _latest(data.last_events, ("goal_highlight",), game.id),
         }
 
 
@@ -134,6 +149,27 @@ class ScoreSensor(NhlTeamEntity, SensorEntity):
             return None
         side = sides[0] if self._own else sides[1]
         return side.score or 0
+
+
+class ShotsSensor(NhlTeamEntity, SensorEntity):
+    """Team or opponent shots on goal in the current game, for small displays."""
+
+    def __init__(self, coordinator: TeamCoordinator, key: str, own: bool) -> None:
+        """Initialize."""
+        super().__init__(coordinator, key)
+        self._own = own
+
+    @property
+    def native_value(self) -> int | None:
+        """Return shots on goal, or None when no game has started."""
+        game = self.coordinator.data.current_game
+        if game is None or game.state not in LIVE_STATES | FINISHED_STATES:
+            return None
+        sides = game.side_for(self.team_abbrev)
+        if sides is None:
+            return None
+        side = sides[0] if self._own else sides[1]
+        return side.sog or 0
 
 
 class NextGameSensor(NhlTeamEntity, SensorEntity):

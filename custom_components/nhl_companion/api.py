@@ -9,13 +9,21 @@ from typing import Any
 
 import aiohttp
 
-from .const import DEFAULT_API_BASE_URL, VERSION
-from .models import Game, GameSnapshot, ScheduleDay, Standing
+from .const import (
+    BRIGHTCOVE_ACCOUNT,
+    BRIGHTCOVE_PLAYBACK_URL,
+    BRIGHTCOVE_PLAYER_CONFIG_URL,
+    DEFAULT_API_BASE_URL,
+    VERSION,
+)
+from .models import Clip, Game, GameSnapshot, ScheduleDay, Standing
 from .parser import (
+    parse_clip,
     parse_club_schedule,
     parse_play_by_play,
     parse_schedule,
     parse_standings,
+    parse_three_stars,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,6 +63,10 @@ class NhlConnectionError(NhlApiError):
     """The NHL API could not be reached."""
 
 
+class NhlAuthError(NhlApiError):
+    """A video service rejected the request (stale policy key)."""
+
+
 class NhlApiClient:
     """Thin async wrapper around the endpoints this integration uses."""
 
@@ -67,6 +79,7 @@ class NhlApiClient:
         # url -> (ETag, body) for conditional requests; the API answers 304 on a match
         self._etags: dict[str, tuple[str, dict[str, Any]]] = {}
         self._expires: dict[str, float] = {}
+        self._policy_key: str | None = None
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}/{path.lstrip('/')}"
@@ -127,6 +140,53 @@ class NhlApiClient:
     async def get_play_by_play(self, game_id: int) -> GameSnapshot:
         """Live play-by-play for a game."""
         return parse_play_by_play(await self._get(f"gamecenter/{game_id}/play-by-play"))
+
+    async def get_three_stars(self, game_id: int) -> list[dict[str, Any]]:
+        """Three stars of a game; empty until shortly after the final."""
+        return parse_three_stars(await self._get(f"gamecenter/{game_id}/landing", cache=False))
+
+    async def get_clip(self, clip_id: int | str) -> Clip:
+        """Resolve an NHL video clip id to playable stream URLs.
+
+        NHL clips are hosted on Brightcove. The Playback API needs the policy key
+        from the NHL's public player config; it is fetched once and refreshed if
+        Brightcove rejects it. Stream URLs are signed, so resolve them when needed.
+        """
+        for attempt in range(2):
+            if self._policy_key is None or attempt:
+                config = await self._get_json(BRIGHTCOVE_PLAYER_CONFIG_URL)
+                self._policy_key = (config.get("video_cloud") or {}).get("policy_key")
+                if not self._policy_key:
+                    raise NhlApiError("No Brightcove policy key in the NHL player config")
+            url = BRIGHTCOVE_PLAYBACK_URL.format(account=BRIGHTCOVE_ACCOUNT, video_id=clip_id)
+            try:
+                data = await self._get_json(url, {"Accept": f"application/json;pk={self._policy_key}"})
+            except NhlAuthError:
+                if attempt:
+                    raise
+                continue
+            clip = parse_clip(data)
+            if clip.mp4 is None and clip.hls is None:
+                raise NhlApiError(f"Clip {clip_id} has no playable stream")
+            return clip
+        raise NhlApiError(f"Clip {clip_id} unavailable")
+
+    async def _get_json(self, url: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
+        """GET an absolute URL outside the NHL API (no caching)."""
+        try:
+            async with self._session.get(url, timeout=REQUEST_TIMEOUT, headers=headers or {}) as resp:
+                if resp.status in (401, 403):
+                    raise NhlAuthError(f"HTTP {resp.status} from {url}")
+                if resp.status == 404:
+                    raise NhlApiError(f"Not found: {url}")
+                if resp.status >= 400:
+                    raise NhlConnectionError(f"HTTP {resp.status} from {url}")
+                data = await resp.json(content_type=None)
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise NhlConnectionError(f"Error requesting {url}: {err}") from err
+        if not isinstance(data, dict):
+            raise NhlApiError(f"Unexpected response from {url}")
+        return data
 
     async def get_raw(self, path: str) -> dict[str, Any]:
         """Fetch raw JSON (diagnostics and fixture recording)."""

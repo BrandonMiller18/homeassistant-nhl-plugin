@@ -6,17 +6,17 @@ from dataclasses import dataclass
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.const import ATTR_ENTITY_ID, Platform
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 import voluptuous as vol
 
-from .api import NhlApiClient
-from .const import ALL_EVENTS, CONF_API_BASE_URL, DEFAULT_API_BASE_URL, DOMAIN
+from .api import NhlApiClient, NhlApiError
+from .const import ALL_EVENTS, CONF_API_BASE_URL, DEFAULT_API_BASE_URL, DOMAIN, EVT_GOAL_HIGHLIGHT
 from .coordinator import STORAGE_VERSION, LeagueCoordinator, TeamCoordinator
 from .frontend import async_register_frontend
 from .websocket_api import async_register_websocket
@@ -34,6 +34,10 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 SERVICE_SIMULATE = "simulate_event"
 SERVICE_REFRESH = "refresh"
+SERVICE_PLAY_HIGHLIGHT = "play_highlight"
+ATTR_CLIP_ID = "clip_id"
+ATTR_FORMAT = "format"
+CONTENT_TYPES = {"mp4": "video/mp4", "hls": "application/x-mpegURL"}
 ATTR_ENTRY = "config_entry_id"
 ATTR_TYPE = "type"
 ATTR_SCORER = "scorer_name"
@@ -46,6 +50,14 @@ SIMULATE_SCHEMA = vol.Schema(
     }
 )
 REFRESH_SCHEMA = vol.Schema({vol.Optional(ATTR_ENTRY): cv.string})
+PLAY_HIGHLIGHT_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
+        vol.Optional(ATTR_ENTRY): cv.string,
+        vol.Optional(ATTR_CLIP_ID): vol.All(cv.string, vol.Match(r"^\d+$")),
+        vol.Optional(ATTR_FORMAT, default="mp4"): vol.In(list(CONTENT_TYPES)),
+    }
+)
 
 
 @dataclass
@@ -165,5 +177,51 @@ def _register_services(hass: HomeAssistant) -> None:
             await entry.runtime_data.team.async_request_refresh()
             await entry.runtime_data.league.async_request_refresh()
 
+    async def play_highlight(call: ServiceCall) -> ServiceResponse:
+        entries = _target_entries(hass, call)
+        if not entries:
+            raise ServiceValidationError("NHL Companion is not set up")
+        goal: dict | None = None
+        clip_id = call.data.get(ATTR_CLIP_ID)
+        if clip_id is None:
+            # Latest goal video any of the target teams saw
+            for entry in entries:
+                last = entry.runtime_data.team.data.last_events.get(EVT_GOAL_HIGHLIGHT)
+                if last and (goal is None or last.get("fired_at", "") > goal.get("fired_at", "")):
+                    goal = last
+            if goal is None:
+                raise ServiceValidationError("No goal video has been posted yet; pass clip_id")
+            clip_id = goal["clip_id"]
+        try:
+            clip = await entries[0].runtime_data.client.get_clip(clip_id)
+        except NhlApiError as err:
+            raise HomeAssistantError(f"Could not load NHL clip {clip_id}: {err}") from err
+        fmt = call.data[ATTR_FORMAT]
+        url = clip.mp4 if fmt == "mp4" else clip.hls
+        if url is None:
+            fmt = "hls" if fmt == "mp4" else "mp4"
+            url = clip.mp4 if fmt == "mp4" else clip.hls
+        if targets := call.data.get(ATTR_ENTITY_ID):
+            await hass.services.async_call(
+                "media_player",
+                "play_media",
+                {
+                    ATTR_ENTITY_ID: targets,
+                    "media_content_id": url,
+                    "media_content_type": CONTENT_TYPES[fmt],
+                    "extra": {"title": clip.title, "thumb": clip.poster},
+                },
+                blocking=True,
+                context=call.context,
+            )
+        return {**clip.as_dict(), "url": url, "format": fmt, "goal": goal}
+
     hass.services.async_register(DOMAIN, SERVICE_SIMULATE, simulate, schema=SIMULATE_SCHEMA)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_PLAY_HIGHLIGHT,
+        play_highlight,
+        schema=PLAY_HIGHLIGHT_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, refresh, schema=REFRESH_SCHEMA)

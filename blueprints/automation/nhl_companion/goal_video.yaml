@@ -1,0 +1,78 @@
+blueprint:
+  name: NHL Companion - Play goal videos
+  description: >
+    Play the NHL's video of each goal on a TV or other media player when it is posted.
+    The NHL posts a short goal clip (about 10 s) roughly 5 minutes after a goal and a full
+    highlight (about 45 s) roughly 9 minutes after, so this is a replay, not a live horn.
+    Works with players that accept a video URL (Chromecast, Apple TV, Fire TV, most smart TVs and Kodi).
+  domain: automation
+  source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/goal_video.yaml
+  input:
+    team:
+      name: Team
+      selector:
+        config_entry:
+          integration: nhl_companion
+    players:
+      name: Media players
+      selector:
+        entity:
+          domain: media_player
+          multiple: true
+    clip_type:
+      name: Which video
+      description: Short arrives first; full has the build-up and replays.
+      default: full
+      selector:
+        select:
+          options:
+            - label: Full highlight (about 45 s, about 9 minutes after the goal)
+              value: full
+            - label: Short goal clip (about 10 s, about 5 minutes after the goal)
+              value: short
+    include_opponent:
+      name: Opponent goals too
+      default: false
+      selector:
+        boolean: {}
+    only_when:
+      name: Only when this is on (optional)
+      description: >
+        E.g. the TV itself or an input_boolean. Plays only if at least one of these is on
+        (a media player counts as on when idle, playing or paused).
+      default: []
+      selector:
+        entity:
+          multiple: true
+    before_actions:
+      name: Before playing (optional)
+      description: E.g. switch the TV input or pause what is playing.
+      default: []
+      selector:
+        action: {}
+mode: queued
+max: 5
+variables:
+  wanted_clip: !input clip_type
+  include_opponent: !input include_opponent
+  only_when: !input only_when
+trigger:
+  - trigger: event
+    event_type: nhl_companion_event
+    event_data:
+      type: goal_highlight
+      config_entry_id: !input team
+condition:
+  - condition: template
+    value_template: >
+      {{ trigger.event.data.clip_type == wanted_clip
+         and (trigger.event.data.side == 'team' or include_opponent)
+         and (only_when | count == 0
+              or only_when | select('is_state', ['on', 'idle', 'playing', 'paused']) | list | count > 0) }}
+action:
+  - choose: []
+    default: !input before_actions
+  - action: nhl_companion.play_highlight
+    data:
+      entity_id: !input players
+      clip_id: "{{ trigger.event.data.clip_id }}"

@@ -145,6 +145,55 @@ def test_goal_that_stops_being_a_goal_is_reversed() -> None:
     assert rev.data["side"] == "team"
 
 
+def test_goal_videos_fire_goal_highlight_once_per_clip() -> None:
+    """Live STL@OTT 2026-10-13: a short clip ~5 min and a full highlight ~9 min after the goal."""
+    game = FakeGame()
+    game.start_period(1)
+    det = EventDetector("BOS")
+    step(det, game)
+    goal_id = game.goal("BOS", BOS_PASTA, BOS_MCAVOY)
+    assert types(step(det, game)) == ["team_goal"]
+
+    game.amend(goal_id, discreteClip=6406807775112)
+    (short,) = step(det, game)
+    assert short.type == "goal_highlight"
+    assert short.data["clip_type"] == "short"
+    assert short.data["clip_id"] == "6406807775112"
+    assert short.data["side"] == "team"
+    assert short.data["scorer"]["name"] == "David Pastrnak"
+    assert step(det, game) == []
+
+    game.amend(
+        goal_id,
+        highlightClip=6406806930112,
+        highlightClipSharingUrl="https://nhl.com/video/x-6406806930112",
+    )
+    (full,) = step(det, game)
+    assert full.data["clip_type"] == "full"
+    assert full.data["clip_id"] == "6406806930112"
+    assert full.data["highlight_url"] == "https://nhl.com/video/x-6406806930112"
+    assert step(det, game) == []
+
+
+def test_goal_highlight_not_replayed_after_restart() -> None:
+    game = FakeGame()
+    game.start_period(1)
+    goal_id = game.goal("BOS", BOS_PASTA)
+    game.amend(goal_id, discreteClip=1)
+    det = EventDetector("BOS")
+    step(det, game)  # baseline sees the clip already posted
+    assert step(det, game) == []
+
+    # State saved before clips were tracked
+    saved = det.state.as_dict()
+    for goal in saved["goals"].values():
+        goal.pop("clips")
+    restored = EventDetector("BOS", DetectorState.from_dict(saved))
+    assert step(restored, game) == []
+    game.amend(goal_id, highlightClip=2)
+    assert types(step(restored, game)) == ["goal_highlight"]
+
+
 def test_placeholder_penalty_waits_for_real_infraction() -> None:
     """Live STL@OTT 2026-10-13: a penalty showed descKey "minor" for one update, then "holding"."""
     game = FakeGame()

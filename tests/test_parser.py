@@ -9,10 +9,12 @@ from fake_nhl import FakeGame, club_schedule, league_schedule, standings
 import pytest
 
 from custom_components.nhl_companion.parser import (
+    parse_clip,
     parse_club_schedule,
     parse_play_by_play,
     parse_schedule,
     parse_standings,
+    parse_three_stars,
     text,
 )
 
@@ -58,6 +60,58 @@ def test_situation_block() -> None:
     snap = parse_play_by_play(game.play_by_play())
     assert snap.game.has_situation is True
     assert snap.game.power_play_abbrev is None
+
+
+def test_parse_clip() -> None:
+    """Shape of a Brightcove Playback API response for an NHL goal clip (trimmed)."""
+    clip = parse_clip(
+        {
+            "id": "6406808612112",
+            "name": "STL@OTT: McTavish scores goal against Samuel Ersson",
+            "duration": 45743,
+            "poster": "https://cf-images.us-east-1.prod.boltdns.net/poster.jpg",
+            "sources": [
+                {"type": "application/x-mpegURL", "src": "http://manifest.prod.boltdns.net/hls"},
+                {"type": "application/x-mpegURL", "src": "https://manifest.prod.boltdns.net/hls"},
+                {"type": "application/dash+xml", "src": "https://manifest.prod.boltdns.net/dash"},
+                {"container": "MP4", "codec": "H264", "height": 360, "src": "https://cdn/360.mp4"},
+                {"container": "MP4", "codec": "H264", "height": 720, "src": "http://cdn/720.mp4"},
+                {"container": "MP4", "codec": "H264", "height": 720, "src": "https://cdn/720.mp4"},
+            ],
+        }
+    )
+    assert clip.id == "6406808612112"
+    assert clip.duration_s == 45.7
+    assert clip.mp4 == "https://cdn/720.mp4"
+    assert clip.hls == "https://manifest.prod.boltdns.net/hls"
+    assert parse_clip({"sources": []}).mp4 is None
+
+
+def test_parse_three_stars() -> None:
+    assert parse_three_stars({"summary": {"threeStars": []}}) == []
+    stars = parse_three_stars(
+        {
+            "summary": {
+                "threeStars": [
+                    {"star": 2, "playerId": 2, "teamAbbrev": "OTT", "name": {"default": "B. Two"}},
+                    {
+                        "star": 1,
+                        "playerId": 1,
+                        "teamAbbrev": "STL",
+                        "name": {"default": "A. One"},
+                        "sweaterNo": 9,
+                        "position": "C",
+                        "goals": 2,
+                        "assists": 1,
+                        "points": 3,
+                    },
+                ]
+            }
+        }
+    )
+    assert [s["name"] for s in stars] == ["A. One", "B. Two"]
+    assert stars[0]["points"] == 3
+    assert stars[0]["number"] == 9
 
 
 def test_schedule_and_standings() -> None:

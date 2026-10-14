@@ -8,6 +8,14 @@ DOMAIN: Final = "nhl_companion"
 VERSION: Final = "0.1.0"
 
 DEFAULT_API_BASE_URL: Final = "https://api-web.nhle.com/v1"
+# NHL video clips (play-by-play highlightClip / discreteClip ids) are Brightcove videos
+BRIGHTCOVE_ACCOUNT: Final = "6415718365001"
+BRIGHTCOVE_PLAYER_CONFIG_URL: Final = (
+    f"https://players.brightcove.net/{BRIGHTCOVE_ACCOUNT}/default_default/config.json"
+)
+BRIGHTCOVE_PLAYBACK_URL: Final = (
+    "https://edge.api.brightcove.com/playback/v1/accounts/{account}/videos/{video_id}"
+)
 LOGO_URL_TEMPLATE: Final = "https://assets.nhle.com/logos/nhl/svg/{abbrev}_light.svg"
 
 # Config entry data
@@ -53,6 +61,7 @@ EVT_TEAM_GOAL: Final = "team_goal"
 EVT_OPPONENT_GOAL: Final = "opponent_goal"
 EVT_GOAL_REVERSED: Final = "goal_reversed"
 EVT_GOAL_UPDATED: Final = "goal_updated"
+EVT_GOAL_HIGHLIGHT: Final = "goal_highlight"
 EVT_TEAM_PENALTY: Final = "team_penalty"
 EVT_OPPONENT_PENALTY: Final = "opponent_penalty"
 EVT_PERIOD_START: Final = "period_start"
@@ -66,7 +75,13 @@ EVT_GAME_END_WIN: Final = "game_end_win"
 EVT_GAME_END_LOSS: Final = "game_end_loss"
 EVT_GAME_END_OTL: Final = "game_end_otl"
 
-GOAL_EVENTS: Final = [EVT_TEAM_GOAL, EVT_OPPONENT_GOAL, EVT_GOAL_UPDATED, EVT_GOAL_REVERSED]
+GOAL_EVENTS: Final = [
+    EVT_TEAM_GOAL,
+    EVT_OPPONENT_GOAL,
+    EVT_GOAL_UPDATED,
+    EVT_GOAL_HIGHLIGHT,
+    EVT_GOAL_REVERSED,
+]
 PENALTY_EVENTS: Final = [EVT_TEAM_PENALTY, EVT_OPPONENT_PENALTY]
 PERIOD_EVENTS: Final = [
     EVT_PERIOD_START,

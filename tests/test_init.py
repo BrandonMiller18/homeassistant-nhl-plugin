@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 from fake_nhl import FakeGame
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_capture_events,
     async_fire_time_changed,
+    async_mock_service,
 )
 
 from custom_components.nhl_companion.const import (
@@ -23,6 +26,7 @@ from custom_components.nhl_companion.const import (
     DOMAIN,
     EVENT_NHL,
 )
+from custom_components.nhl_companion.models import Clip
 
 PASTA, MCAVOY, MATTHEWS = 8477956, 8479325, 8479318
 
@@ -175,6 +179,68 @@ async def test_power_play_from_situation_block(
     await advance(hass, freezer, 15)
     assert hass.states.get(pp).state == "on"
     assert hass.states.get(pp).attributes["time_remaining"] is None
+
+
+async def test_goal_video_stats_and_three_stars(
+    hass: HomeAssistant, mock_api, fake_game: FakeGame, freezer: FrozenDateTimeFactory
+) -> None:
+    freezer.move_to(datetime(2025, 11, 1, 23, 0, tzinfo=UTC))
+    fake_game.start = datetime(2025, 11, 1, 22, 30, tzinfo=UTC)
+    fake_game.start_period(1)
+    entry = await setup_entry(hass)
+    events = async_capture_events(hass, EVENT_NHL)
+    played = async_mock_service(hass, "media_player", "play_media")
+
+    goal_id = fake_game.goal("BOS", PASTA, MCAVOY)
+    fake_game.shot("TOR", MATTHEWS)
+    await advance(hass, freezer, 15)
+    assert hass.states.get(entity_id(hass, entry, "sensor", "team_shots")).state == "1"
+    assert hass.states.get(entity_id(hass, entry, "sensor", "opponent_shots")).state == "1"
+    status = hass.states.get(entity_id(hass, entry, "sensor", "game_status"))
+    assert status.attributes["team_stats"]["shots_on_goal"] == 1
+    assert status.attributes["goals"][0]["scorer"] == "David Pastrnak"
+
+    # No video yet
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(DOMAIN, "play_highlight", {}, blocking=True, return_response=True)
+
+    fake_game.amend(goal_id, highlightClip=6406806930112)
+    await advance(hass, freezer, 15)
+    highlight = next(e.data for e in events if e.data["type"] == "goal_highlight")
+    assert highlight["clip_id"] == "6406806930112"
+    assert highlight["clip_type"] == "full"
+    status = hass.states.get(entity_id(hass, entry, "sensor", "game_status"))
+    assert status.attributes["last_goal_video"]["clip_id"] == "6406806930112"
+
+    clip = Clip("6406806930112", "Pastrnak scores", 42.4, "https://cdn/720.mp4", "https://cdn/x.m3u8", None)
+    with patch("custom_components.nhl_companion.api.NhlApiClient.get_clip", return_value=clip) as get_clip:
+        response = await hass.services.async_call(
+            DOMAIN,
+            "play_highlight",
+            {"entity_id": "media_player.living_room_tv"},
+            blocking=True,
+            return_response=True,
+        )
+    get_clip.assert_awaited_once_with("6406806930112")
+    assert response["url"] == "https://cdn/720.mp4"
+    assert response["goal"]["scorer"]["name"] == "David Pastrnak"
+    assert played[0].data["media_content_id"] == "https://cdn/720.mp4"
+    assert played[0].data["media_content_type"] == "video/mp4"
+    assert played[0].data["entity_id"] == ["media_player.living_room_tv"]
+
+    # Three stars are empty right after the final and are retried until posted
+    fake_game.final()
+    await advance(hass, freezer, 15)
+    status = hass.states.get(entity_id(hass, entry, "sensor", "game_status"))
+    assert status.state == "final"
+    assert status.attributes["three_stars"] is None
+    assert status.attributes["team_stats"]["shots_on_goal"] == 1
+    mock_api.three_stars = [{"star": 1, "name": "David Pastrnak", "team_abbrev": "BOS"}]
+    for _ in range(3):
+        await advance(hass, freezer, 125)
+    status = hass.states.get(entity_id(hass, entry, "sensor", "game_status"))
+    assert status.attributes["three_stars"][0]["name"] == "David Pastrnak"
+    assert status.attributes["team_stats"]["shots_on_goal"] == 1
 
 
 async def test_alert_delay_and_opponent_filter(

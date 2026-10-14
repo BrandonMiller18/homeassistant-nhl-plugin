@@ -34,6 +34,7 @@ from .const import (
     EVENT_NHL,
     EVT_GAME_DAY,
     EVT_GAME_SOON,
+    EVT_GOAL_HIGHLIGHT,
     EVT_GOAL_UPDATED,
     FINISHED_STATES,
     INTERVAL_GAME_DAY,
@@ -54,6 +55,7 @@ from .const import (
 )
 from .event_detector import DetectorState, EventDetector, period_label, strength_for
 from .models import Game, GameSnapshot, NhlEvent, ScheduleDay, Standing
+from .stats import game_stats
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,6 +63,10 @@ STORAGE_VERSION = 1
 MAX_EMITTED_KEYS = 200
 # Keep polling play-by-play this long after the scheduled start at most
 MAX_GAME_HOURS = 8
+# Follow-up goal events carry side; opponent ones are skipped when opponents are off
+SIDED_GOAL_EVENTS = {EVT_GOAL_UPDATED, EVT_GOAL_HIGHLIGHT}
+# The landing endpoint fills in three stars a little after the final; retry this often
+THREE_STARS_RETRY = timedelta(minutes=2)
 
 
 def _clock_time(value: datetime) -> str:
@@ -136,6 +142,9 @@ class TeamData:
     snapshot: GameSnapshot | None = None
     strength: str | None = None
     power_play_remaining: str | None = None
+    # {"game_id", "team", "opponent", "goals"} computed from play-by-play
+    stats: dict[str, Any] | None = None
+    three_stars: list[dict[str, Any]] | None = None
     last_events: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
@@ -162,6 +171,9 @@ class TeamCoordinator(DataUpdateCoordinator[TeamData]):
         self._schedule_dirty = False
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
         self._loaded = False
+        self._three_stars: dict[int, list[dict[str, Any]]] = {}
+        self._three_stars_checked: datetime | None = None
+        self._three_stars_pending = False
 
     # Options -------------------------------------------------------------
 
@@ -238,6 +250,7 @@ class TeamCoordinator(DataUpdateCoordinator[TeamData]):
                     self._schedule_dirty = True
 
         data = self._build(games, snapshot, now, previous)
+        data.three_stars = await self._async_three_stars(data, now)
         events.extend(self._schedule_events(data, now))
         if events:
             self._dispatch(events, data)
@@ -301,8 +314,42 @@ class TeamCoordinator(DataUpdateCoordinator[TeamData]):
             snapshot=snapshot,
             strength=strength,
             power_play_remaining=pp_remaining,
+            stats=self._stats(snapshot, current, previous),
             last_events=previous.last_events,
         )
+
+    def _stats(
+        self, snapshot: GameSnapshot | None, current: Game | None, previous: TeamData
+    ) -> dict[str, Any] | None:
+        """Team stats for the current game, kept after the final until the next game."""
+        if snapshot is not None and (sides := snapshot.game.side_for(self.team_abbrev)):
+            return {"game_id": snapshot.game.id, **game_stats(snapshot, sides[0], sides[1])}
+        if previous.stats and current is not None and previous.stats["game_id"] == current.id:
+            return previous.stats
+        return None
+
+    async def _async_three_stars(self, data: TeamData, now: datetime) -> list[dict[str, Any]] | None:
+        """Three stars of the most recent final, fetched until the NHL posts them."""
+        self._three_stars_pending = False
+        game = data.last_game
+        if game is None or game.start_utc is None or now - game.start_utc > timedelta(hours=MAX_GAME_HOURS):
+            return None
+        if game.id in self._three_stars:
+            return self._three_stars[game.id]
+        self._three_stars_pending = True
+        if self._three_stars_checked and now - self._three_stars_checked < THREE_STARS_RETRY:
+            return None
+        self._three_stars_checked = now
+        try:
+            stars = await self.client.get_three_stars(game.id)
+        except NhlApiError as err:
+            _LOGGER.debug("Three stars unavailable for %s: %s", game.id, err)
+            return None
+        if stars:
+            self._three_stars = {game.id: stars}
+            self._three_stars_pending = False
+            return stars
+        return None
 
     def _strength(self, snapshot: GameSnapshot) -> tuple[str | None, str | None]:
         """Current strength (ev, pp, sh) and power play time left.
@@ -383,11 +430,16 @@ class TeamCoordinator(DataUpdateCoordinator[TeamData]):
         return interval
 
     def _next_interval(self, data: TeamData, now: datetime) -> float:
-        game = data.current_game
         if data.snapshot is not None and data.snapshot.game.state not in FINISHED_STATES:
             return self._live_poll_delay(data.snapshot.game.id)
         if self._schedule_dirty:
             return INTERVAL_PRE_GAME
+        if self._three_stars_pending:
+            return min(self._idle_interval(data, now), THREE_STARS_RETRY.total_seconds())
+        return self._idle_interval(data, now)
+
+    def _idle_interval(self, data: TeamData, now: datetime) -> float:
+        game = data.current_game
         nxt = data.next_game
         if nxt is not None and nxt.start_utc is not None:
             until = (nxt.start_utc - now).total_seconds()
@@ -413,7 +465,7 @@ class TeamCoordinator(DataUpdateCoordinator[TeamData]):
             self._emitted.append(event.key)
             if not track_opponent and (
                 event.type in OPPONENT_EVENTS
-                or (event.type == EVT_GOAL_UPDATED and event.data.get("side") == "opponent")
+                or (event.type in SIDED_GOAL_EVENTS and event.data.get("side") == "opponent")
             ):
                 continue
             if not self.alerts_enabled:
@@ -438,7 +490,11 @@ class TeamCoordinator(DataUpdateCoordinator[TeamData]):
         if not self.alerts_enabled:
             _LOGGER.debug("Alerts turned off during delay, dropping %s", event.type)
             return
-        payload = {**event.data, "config_entry_id": self.config_entry.entry_id}
+        payload = {
+            **event.data,
+            "config_entry_id": self.config_entry.entry_id,
+            "fired_at": dt_util.utcnow().isoformat(),
+        }
         _LOGGER.debug("Firing %s for %s", event.type, self.team_abbrev)
         self.hass.bus.async_fire(EVENT_NHL, payload)
         target = data or self.data

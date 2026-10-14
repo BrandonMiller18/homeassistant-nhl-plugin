@@ -247,6 +247,33 @@ class FakeGame:
         }
         self.situation["homeTeam" if pp_home else "awayTeam"]["situationDescriptions"] = ["PP"]
 
+    def hit(self, abbrev: str, hitter: int, hittee: int | None = None) -> int:
+        return self._add_play(
+            "hit",
+            {"hittingPlayerId": hitter, "hitteePlayerId": hittee, "eventOwnerTeamId": self.team_id(abbrev)},
+        )
+
+    def faceoff(self, winner_abbrev: str, winner: int, loser: int | None = None) -> int:
+        return self._add_play(
+            "faceoff",
+            {
+                "winningPlayerId": winner,
+                "losingPlayerId": loser,
+                "eventOwnerTeamId": self.team_id(winner_abbrev),
+            },
+        )
+
+    def blocked_shot(self, shooter_abbrev: str, shooter: int, blocker: int) -> int:
+        """Owner is the shooting team, as in live data."""
+        return self._add_play(
+            "blocked-shot",
+            {
+                "shootingPlayerId": shooter,
+                "blockingPlayerId": blocker,
+                "eventOwnerTeamId": self.team_id(shooter_abbrev),
+            },
+        )
+
     def shot(self, abbrev: str, shooter: int) -> int:
         self.sog[abbrev] += 1
         return self._add_play(

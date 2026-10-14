@@ -65,6 +65,12 @@
       },
       "standing": {
         "name": "Standings points"
+      },
+      "team_shots": {
+        "name": "Shots on goal"
+      },
+      "opponent_shots": {
+        "name": "Opponent shots on goal"
       }
     },
     "binary_sensor": {
@@ -92,6 +98,7 @@
               "team_goal": "Team goal",
               "opponent_goal": "Opponent goal",
               "goal_updated": "Goal details updated",
+              "goal_highlight": "Goal video posted",
               "goal_reversed": "Goal reversed"
             }
           }
@@ -144,6 +151,7 @@
         "team_goal": "Team goal",
         "opponent_goal": "Opponent goal",
         "goal_updated": "Goal details updated",
+        "goal_highlight": "Goal video posted",
         "goal_reversed": "Goal reversed",
         "team_penalty": "Team penalty",
         "opponent_penalty": "Opponent penalty",
@@ -186,6 +194,28 @@
         "config_entry_id": {
           "name": "Team",
           "description": "Team to refresh. Leave empty for all."
+        }
+      }
+    },
+    "play_highlight": {
+      "name": "Play goal video",
+      "description": "Play an NHL goal video on media players, or return its stream URL. Without a clip ID it plays the latest goal video posted for your teams. Videos are posted about 5 minutes (short clip) and 9 minutes (full highlight) after a goal.",
+      "fields": {
+        "entity_id": {
+          "name": "Media players",
+          "description": "Where to play the video. Leave empty to only get the stream URL in the response."
+        },
+        "config_entry_id": {
+          "name": "Team",
+          "description": "Use this team's latest goal video. Leave empty for any followed team."
+        },
+        "clip_id": {
+          "name": "Clip ID",
+          "description": "NHL clip ID from a goal_highlight event (clip_id). Leave empty for the latest."
+        },
+        "format": {
+          "name": "Format",
+          "description": "mp4 (720p file, works on most players) or hls (adaptive stream)."
         }
       }
     }
