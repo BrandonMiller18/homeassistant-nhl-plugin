@@ -6,4 +6,3 @@ __pycache__/
 venv/
 /config/
 node_modules/
-tests/fixtures/real/*.json
