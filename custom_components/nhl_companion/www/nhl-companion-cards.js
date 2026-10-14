@@ -221,7 +221,7 @@ class NhlScoreboardCard extends NhlBaseCard {
     let stars = "";
     if (st.state === "final" && Array.isArray(a.three_stars) && a.three_stars.length) {
       stars = `<div class="section stars"><span class="muted">Three stars</span>${a.three_stars
-        .map((s) => `<div>${"★".repeat(s.star || 1)} <b>${esc(s.name)}</b> <span class="muted">${esc(s.team_abbrev || "")}</span></div>`)
+        .map((s) => `<div>★ <span class="muted">${esc(["", "1st", "2nd", "3rd"][s.star] || "")}</span> <b>${esc(s.name)}</b> <span class="muted">${esc(s.team_abbrev || "")}</span></div>`)
         .join("")}</div>`;
     }
 
