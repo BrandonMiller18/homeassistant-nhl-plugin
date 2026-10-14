@@ -2,7 +2,8 @@ blueprint:
   name: NHL Companion - Goal lights
   description: >
     Flash lights in your team's colors when your team scores, then restore
-    them to how they were.
+    them to how they were. A failed flash (e.g. a busy Zigbee radio) is
+    skipped rather than stopping the show, so the lights are always restored.
   domain: automation
   source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/goal_lights.yaml
   input:
@@ -29,12 +30,27 @@ blueprint:
         color_rgb: {}
     flashes:
       name: Number of flashes
-      default: 8
+      default: 6
       selector:
         number:
           min: 1
           max: 30
-mode: restart
+    flash_ms:
+      name: Flash speed
+      description: >
+        How long each color stays on. Below about 1000 ms, Zigbee radios can
+        start dropping commands when flashing several lights.
+      default: 1000
+      selector:
+        number:
+          min: 250
+          max: 5000
+          step: 50
+          unit_of_measurement: ms
+# Queued, not restart: restarting mid-show would skip the restore and the next
+# run would snapshot the flashing colors instead of the real ones.
+mode: queued
+max: 3
 trigger:
   - trigger: event
     event_type: nhl_companion_event
@@ -52,6 +68,7 @@ action:
       count: !input flashes
       sequence:
         - action: light.turn_on
+          continue_on_error: true
           target:
             entity_id: !input lights
           data:
@@ -59,8 +76,9 @@ action:
             brightness_pct: 100
             transition: 0
         - delay:
-            milliseconds: 500
+            milliseconds: !input flash_ms
         - action: light.turn_on
+          continue_on_error: true
           target:
             entity_id: !input lights
           data:
@@ -68,7 +86,18 @@ action:
             brightness_pct: 100
             transition: 0
         - delay:
-            milliseconds: 500
+            milliseconds: !input flash_ms
+  # Let the radio drain its queue, restore, then restore again in case the
+  # first restore was dropped.
+  - delay:
+      seconds: 1
   - action: scene.turn_on
+    continue_on_error: true
+    target:
+      entity_id: scene.nhl_companion_goal_lights_restore
+  - delay:
+      seconds: 2
+  - action: scene.turn_on
+    continue_on_error: true
     target:
       entity_id: scene.nhl_companion_goal_lights_restore

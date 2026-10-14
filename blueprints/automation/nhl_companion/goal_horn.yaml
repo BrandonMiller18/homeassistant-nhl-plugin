@@ -50,7 +50,10 @@ blueprint:
       default: []
       selector:
         action: {}
-mode: restart
+# Queued, not restart: restarting mid-horn would skip the volume restore and the
+# next run would snapshot the horn volume instead of the real one.
+mode: queued
+max: 3
 trigger:
   - trigger: event
     event_type: nhl_companion_event
@@ -65,11 +68,13 @@ action:
       scene_id: nhl_companion_goal_horn_restore
       snapshot_entities: "{{ speakers }}"
   - action: media_player.volume_set
+    continue_on_error: true
     target:
       entity_id: !input speakers
     data:
       volume_level: !input volume
   - action: media_player.play_media
+    continue_on_error: true
     target:
       entity_id: !input speakers
     data:
