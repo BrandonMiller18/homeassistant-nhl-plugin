@@ -5,6 +5,7 @@ from __future__ import annotations
 from fake_nhl import FakeGame
 
 from custom_components.nhl_companion.event_detector import (
+    MAX_PENALTY_HOLD_POLLS,
     DetectorState,
     EventDetector,
     period_label,
@@ -142,6 +143,40 @@ def test_goal_that_stops_being_a_goal_is_reversed() -> None:
     assert rev.type == "goal_reversed"
     assert rev.data["event_id"] == goal_id
     assert rev.data["side"] == "team"
+
+
+def test_placeholder_penalty_waits_for_real_infraction() -> None:
+    """Live STL@OTT 2026-10-13: a penalty showed descKey "minor" for one update, then "holding"."""
+    game = FakeGame()
+    game.start_period(1)
+    det = EventDetector("BOS")
+    step(det, game)
+
+    pen_id = game.penalty("TOR", TOR_NYLANDER, desc="minor")
+    assert step(det, game) == []
+    restored = EventDetector("BOS", DetectorState.from_dict(det.state.as_dict()))
+    assert restored.state.held == {pen_id: 1}
+
+    game.amend(pen_id, descKey="holding", drawnByPlayerId=BOS_PASTA)
+    (pen,) = step(restored, game)
+    assert pen.type == "opponent_penalty"
+    assert pen.data["infraction"] == "Holding"
+    assert pen.data["drawn_by"]["name"] == "David Pastrnak"
+    assert restored.state.held == {}
+
+
+def test_placeholder_penalty_is_announced_after_waiting() -> None:
+    game = FakeGame()
+    game.start_period(1)
+    det = EventDetector("BOS")
+    step(det, game)
+    game.penalty("BOS", BOS_MCAVOY, desc="minor")
+    held = [step(det, game) for _ in range(MAX_PENALTY_HOLD_POLLS)]
+    assert held == [[]] * MAX_PENALTY_HOLD_POLLS
+    (pen,) = step(det, game)
+    assert pen.type == "team_penalty"
+    assert pen.data["infraction"] == "Minor"
+    assert step(det, game) == []
 
 
 def test_goal_updated_survives_restart_without_replaying() -> None:

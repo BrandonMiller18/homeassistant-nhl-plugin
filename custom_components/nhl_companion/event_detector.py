@@ -39,6 +39,12 @@ GOAL_PLAYER_FIELDS = (
 )
 
 
+# A penalty can first appear with only its class as the infraction ("minor"), filled in
+# with the real call one update later. Such penalties wait up to this many polls.
+PLACEHOLDER_INFRACTIONS = {"minor", "major", "penalty"}
+MAX_PENALTY_HOLD_POLLS = 6
+
+
 def goal_players(details: dict[str, Any]) -> list[int | None]:
     """Scorer and assist ids of a goal, in GOAL_PLAYER_FIELDS order."""
     return [details.get(key) for _name, key in GOAL_PLAYER_FIELDS]
@@ -102,6 +108,8 @@ class DetectorState:
     game_state: str | None = None
     in_intermission: bool = False
     emitted: set[str] = field(default_factory=set)
+    # penalty event_id -> polls it has waited for a real infraction
+    held: dict[int, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         """Serialize to JSON-safe dict."""
@@ -114,6 +122,7 @@ class DetectorState:
             "game_state": self.game_state,
             "in_intermission": self.in_intermission,
             "emitted": sorted(self.emitted),
+            "held": {str(k): v for k, v in self.held.items()},
         }
 
     @classmethod
@@ -131,6 +140,7 @@ class DetectorState:
             game_state=data.get("game_state"),
             in_intermission=bool(data.get("in_intermission", False)),
             emitted=set(data.get("emitted", [])),
+            held={int(k): int(v) for k, v in (data.get("held") or {}).items()},
         )
 
 
@@ -179,11 +189,16 @@ class EventDetector:
             became_goal = play.type_key == "goal" and play.event_id not in state.goals
             if play.event_id in state.seen_ids and not became_goal:
                 continue
+            if self._hold_penalty(play):
+                continue
             state.seen_ids.add(play.event_id)
             new_ids.add(play.event_id)
             event = self._play_event(snap, play, base, team, is_home)
             if event is not None:
                 events.append(event)
+
+        for held_id in [i for i in state.held if i not in {p.event_id for p in snap.plays}]:
+            state.held.pop(held_id)
 
         # Scorer or assists filled in or corrected after the goal was announced
         events.extend(self._goal_updates(snap, base, team, is_home, new_ids))
@@ -342,6 +357,22 @@ class EventDetector:
                 self._event(EVT_GOAL_UPDATED, payload, f"{snap.game.id}:{play.event_id}:updated:{sig}")
             )
         return events
+
+    def _hold_penalty(self, play: Play) -> bool:
+        """Wait a few polls for a penalty whose infraction is only "minor" or "major"."""
+        state = self.state
+        assert state is not None
+        if play.type_key != "penalty":
+            return False
+        if str(play.details.get("descKey") or "").lower() not in PLACEHOLDER_INFRACTIONS:
+            state.held.pop(play.event_id, None)
+            return False
+        waited = state.held.get(play.event_id, 0)
+        if waited >= MAX_PENALTY_HOLD_POLLS:
+            state.held.pop(play.event_id, None)
+            return False
+        state.held[play.event_id] = waited + 1
+        return True
 
     @staticmethod
     def _play_base(base: dict[str, Any], play: Play) -> dict[str, Any]:
