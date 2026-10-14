@@ -34,6 +34,7 @@ from .const import (
     EVENT_NHL,
     EVT_GAME_DAY,
     EVT_GAME_SOON,
+    EVT_GOAL_UPDATED,
     FINISHED_STATES,
     INTERVAL_GAME_DAY,
     INTERVAL_IDLE,
@@ -391,7 +392,10 @@ class TeamCoordinator(DataUpdateCoordinator[TeamData]):
             if event.key in self._emitted:
                 continue
             self._emitted.append(event.key)
-            if not track_opponent and event.type in OPPONENT_EVENTS:
+            if not track_opponent and (
+                event.type in OPPONENT_EVENTS
+                or (event.type == EVT_GOAL_UPDATED and event.data.get("side") == "opponent")
+            ):
                 continue
             if not self.alerts_enabled:
                 _LOGGER.debug("Alerts off, suppressing %s", event.type)

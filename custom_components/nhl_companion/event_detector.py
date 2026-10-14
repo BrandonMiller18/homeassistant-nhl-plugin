@@ -15,6 +15,7 @@ from .const import (
     EVT_GAME_END_WIN,
     EVT_GAME_START,
     EVT_GOAL_REVERSED,
+    EVT_GOAL_UPDATED,
     EVT_INTERMISSION_END,
     EVT_INTERMISSION_START,
     EVT_OPPONENT_GOAL,
@@ -29,6 +30,18 @@ from .const import (
 from .models import Game, GameSnapshot, NhlEvent, Play, TeamSide
 
 ORDINALS = {1: "1st", 2: "2nd", 3: "3rd"}
+# Goal fields the NHL often fills in after the goal first appears (assists show up
+# 20-40 s later in live data). A change to any of these fires goal_updated.
+GOAL_PLAYER_FIELDS = (
+    ("scorer", "scoringPlayerId"),
+    ("primary_assist", "assist1PlayerId"),
+    ("secondary_assist", "assist2PlayerId"),
+)
+
+
+def goal_players(details: dict[str, Any]) -> list[int | None]:
+    """Scorer and assist ids of a goal, in GOAL_PLAYER_FIELDS order."""
+    return [details.get(key) for _name, key in GOAL_PLAYER_FIELDS]
 
 
 def period_label(period: int | None, period_type: str | None) -> str | None:
@@ -82,7 +95,7 @@ class DetectorState:
 
     game_id: int
     seen_ids: set[int] = field(default_factory=set)
-    # goal event_id -> {side, scorer, period_label, time_in_period}
+    # goal event_id -> {side, scorer, players, period_label, time_in_period}
     goals: dict[int, dict[str, Any]] = field(default_factory=dict)
     team_score: int = 0
     opponent_score: int = 0
@@ -160,13 +173,18 @@ class EventDetector:
 
         # New plays
         current_ids = {p.event_id for p in snap.plays}
+        new_ids: set[int] = set()
         for play in snap.plays:
             if play.event_id in state.seen_ids:
                 continue
             state.seen_ids.add(play.event_id)
+            new_ids.add(play.event_id)
             event = self._play_event(snap, play, base, team, is_home)
             if event is not None:
                 events.append(event)
+
+        # Scorer or assists filled in or corrected after the goal was announced
+        events.extend(self._goal_updates(snap, base, team, is_home, new_ids))
 
         # Goals that vanished from the feed were overturned
         reversed_ids = [gid for gid in state.goals if gid not in current_ids]
@@ -235,6 +253,7 @@ class EventDetector:
                 state.goals[play.event_id] = {
                     "side": "team" if play.owner_team_id == team.id else "opponent",
                     "scorer": self._player(snap, play.details.get("scoringPlayerId")),
+                    "players": goal_players(play.details),
                     "period_label": period_label(play.period, play.period_type),
                     "time_in_period": play.time_in_period,
                 }
@@ -263,6 +282,76 @@ class EventDetector:
             "score": {"team": team.score or 0, "opponent": opponent.score or 0},
         }
 
+    def _goal_payload(
+        self,
+        snap: GameSnapshot,
+        play: Play,
+        play_base: dict[str, Any],
+        is_team: bool,
+        is_home: bool,
+    ) -> dict[str, Any]:
+        d = play.details
+        scorer_is_home = is_home if is_team else not is_home
+        payload = {
+            **play_base,
+            "scorer": self._player(snap, d.get("scoringPlayerId"), d.get("scoringPlayerTotal")),
+            "primary_assist": self._player(snap, d.get("assist1PlayerId"), d.get("assist1PlayerTotal")),
+            "secondary_assist": self._player(snap, d.get("assist2PlayerId"), d.get("assist2PlayerTotal")),
+            "strength": strength_for(play.situation_code, scorer_is_home),
+            "shot_type": d.get("shotType"),
+            "highlight_url": d.get("highlightClipSharingUrl"),
+        }
+        if "homeScore" in d and "awayScore" in d:
+            home_score, away_score = d["homeScore"], d["awayScore"]
+            payload["score"] = (
+                {"team": home_score, "opponent": away_score}
+                if is_home
+                else {"team": away_score, "opponent": home_score}
+            )
+        payload["empty_net"] = payload["strength"] == "en"
+        return payload
+
+    def _goal_updates(
+        self, snap: GameSnapshot, base: dict[str, Any], team: TeamSide, is_home: bool, new_ids: set[int]
+    ) -> list[NhlEvent]:
+        """Goals already announced whose scorer or assists changed in the feed."""
+        state = self.state
+        assert state is not None
+        events: list[NhlEvent] = []
+        for play in snap.plays:
+            goal = state.goals.get(play.event_id)
+            if play.type_key != "goal" or goal is None or play.event_id in new_ids:
+                continue
+            players = goal_players(play.details)
+            old = goal.get("players")
+            goal["players"] = players
+            if old is None or old == players:
+                continue
+            is_team = play.owner_team_id is not None and play.owner_team_id == team.id
+            payload = self._goal_payload(snap, play, self._play_base(base, play), is_team, is_home)
+            changed = [
+                name for (name, _key), a, b in zip(GOAL_PLAYER_FIELDS, old, players, strict=True) if a != b
+            ]
+            payload.update(side="team" if is_team else "opponent", changed=changed)
+            goal["scorer"] = payload["scorer"]
+            sig = "-".join(str(p or 0) for p in players)
+            events.append(
+                self._event(EVT_GOAL_UPDATED, payload, f"{snap.game.id}:{play.event_id}:updated:{sig}")
+            )
+        return events
+
+    @staticmethod
+    def _play_base(base: dict[str, Any], play: Play) -> dict[str, Any]:
+        return {
+            **base,
+            "event_id": play.event_id,
+            "period": play.period,
+            "period_type": play.period_type,
+            "period_label": period_label(play.period, play.period_type),
+            "time_in_period": play.time_in_period,
+            "time_remaining": play.time_remaining,
+        }
+
     def _play_event(
         self,
         snap: GameSnapshot,
@@ -273,40 +362,16 @@ class EventDetector:
     ) -> NhlEvent | None:
         game = snap.game
         d = play.details
-        play_base = {
-            **base,
-            "event_id": play.event_id,
-            "period": play.period,
-            "period_type": play.period_type,
-            "period_label": period_label(play.period, play.period_type),
-            "time_in_period": play.time_in_period,
-            "time_remaining": play.time_remaining,
-        }
+        play_base = self._play_base(base, play)
         is_team = play.owner_team_id is not None and play.owner_team_id == team.id
         key = f"{game.id}:{play.event_id}"
 
         if play.type_key == "goal":
-            scorer_is_home = is_home if is_team else not is_home
-            payload = {
-                **play_base,
-                "scorer": self._player(snap, d.get("scoringPlayerId"), d.get("scoringPlayerTotal")),
-                "primary_assist": self._player(snap, d.get("assist1PlayerId"), d.get("assist1PlayerTotal")),
-                "secondary_assist": self._player(snap, d.get("assist2PlayerId"), d.get("assist2PlayerTotal")),
-                "strength": strength_for(play.situation_code, scorer_is_home),
-                "shot_type": d.get("shotType"),
-                "highlight_url": d.get("highlightClipSharingUrl"),
-            }
-            if "homeScore" in d and "awayScore" in d:
-                home_score, away_score = d["homeScore"], d["awayScore"]
-                payload["score"] = (
-                    {"team": home_score, "opponent": away_score}
-                    if is_home
-                    else {"team": away_score, "opponent": home_score}
-                )
-            payload["empty_net"] = payload["strength"] == "en"
+            payload = self._goal_payload(snap, play, play_base, is_team, is_home)
             self.state.goals[play.event_id] = {  # type: ignore[union-attr]
                 "side": "team" if is_team else "opponent",
                 "scorer": payload["scorer"],
+                "players": goal_players(d),
                 "period_label": play_base["period_label"],
                 "time_in_period": play.time_in_period,
             }

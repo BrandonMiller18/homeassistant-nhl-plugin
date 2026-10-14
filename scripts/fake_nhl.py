@@ -204,6 +204,12 @@ class FakeGame:
         if abbrev:
             self.score[abbrev] -= 1
 
+    def amend(self, event_id: int, **details: Any) -> None:
+        """Edit a play's details after it appeared, as the NHL does with assists."""
+        for play in self.plays:
+            if play["eventId"] == event_id:
+                play.setdefault("details", {}).update(details)
+
     def end_intermission(self) -> None:
         self.in_intermission = False
 

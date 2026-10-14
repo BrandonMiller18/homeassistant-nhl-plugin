@@ -2,6 +2,8 @@ blueprint:
   name: NHL Companion - Goal announcement
   description: >
     Run any actions on a team goal with scorer details, e.g. show the scorer on a display or send a notification.
+    The NHL usually adds assists 20-40 s after a goal first appears, so the first goal event often has none.
+    Turn on "Also run on corrections" to run again with the corrected scorer and assists.
   domain: automation
   source_url: https://github.com/BrandonMiller18/homeassistant-nhl-plugin/blob/main/blueprints/automation/nhl_companion/goal_announcement.yaml
   input:
@@ -10,6 +12,14 @@ blueprint:
       selector:
         config_entry:
           integration: nhl_companion
+    include_updates:
+      name: Also run on corrections
+      description: >
+        Run again when the scorer or assists of a team goal change after it was announced
+        (event type goal_updated; trigger.event.data.changed lists what changed).
+      default: false
+      selector:
+        boolean: {}
     actions:
       name: Actions
       description: >
@@ -18,10 +28,21 @@ blueprint:
       selector:
         action: {}
 mode: queued
+variables:
+  include_updates: !input include_updates
 trigger:
   - trigger: event
     event_type: nhl_companion_event
     event_data:
       type: team_goal
       config_entry_id: !input team
+  - trigger: event
+    event_type: nhl_companion_event
+    event_data:
+      type: goal_updated
+      side: team
+      config_entry_id: !input team
+condition:
+  - condition: template
+    value_template: "{{ trigger.event.data.type == 'team_goal' or include_updates }}"
 action: !input actions

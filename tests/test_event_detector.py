@@ -75,6 +75,51 @@ def test_full_game_sequence() -> None:
     assert step(det, game) == []
 
 
+def test_assists_added_later_fire_goal_updated() -> None:
+    """Live STL@OTT 2026-10-13: assists arrived 20 s and 40 s after the goal."""
+    game = FakeGame()
+    game.start_period(1)
+    det = EventDetector("BOS")
+    step(det, game)
+
+    goal_id = game.goal("BOS", BOS_PASTA)
+    (goal,) = step(det, game)
+    assert goal.type == "team_goal"
+    assert goal.data["primary_assist"] is None
+
+    game.amend(goal_id, assist1PlayerId=BOS_MCAVOY, assist1PlayerTotal=4)
+    (upd,) = step(det, game)
+    assert upd.type == "goal_updated"
+    assert upd.data["side"] == "team"
+    assert upd.data["changed"] == ["primary_assist"]
+    assert upd.data["primary_assist"]["name"] == "Charlie McAvoy"
+    assert upd.data["scorer"]["name"] == "David Pastrnak"
+    assert upd.data["score"] == {"team": 1, "opponent": 0}
+
+    # Clip and time edits are not player changes
+    game.amend(goal_id, highlightClipSharingUrl="https://nhl.com/video/x")
+    assert step(det, game) == []
+
+    game.amend(goal_id, assist2PlayerId=BOS_GEEKIE, scoringPlayerId=BOS_MCAVOY, assist1PlayerId=BOS_PASTA)
+    (upd,) = step(det, game)
+    assert upd.data["changed"] == ["scorer", "primary_assist", "secondary_assist"]
+    assert upd.data["scorer"]["name"] == "Charlie McAvoy"
+    assert upd.key != goal.key
+
+
+def test_goal_updated_survives_restart_without_replaying() -> None:
+    game = FakeGame()
+    game.start_period(1)
+    goal_id = game.goal("BOS", BOS_PASTA)
+    det = EventDetector("BOS")
+    step(det, game)  # baseline already includes the goal
+
+    restored = EventDetector("BOS", DetectorState.from_dict(det.state.as_dict()))
+    assert step(restored, game) == []
+    game.amend(goal_id, assist1PlayerId=BOS_MCAVOY)
+    assert types(step(restored, game)) == ["goal_updated"]
+
+
 def test_goal_reversal_by_missing_play() -> None:
     game = FakeGame()
     game.start_period(1)

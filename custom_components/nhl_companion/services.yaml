@@ -9,6 +9,7 @@ simulate_event:
           options:
             - team_goal
             - opponent_goal
+            - goal_updated
             - goal_reversed
             - team_penalty
             - opponent_penalty

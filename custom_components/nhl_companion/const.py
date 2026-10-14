@@ -52,6 +52,7 @@ EVENT_NHL: Final = "nhl_companion_event"
 EVT_TEAM_GOAL: Final = "team_goal"
 EVT_OPPONENT_GOAL: Final = "opponent_goal"
 EVT_GOAL_REVERSED: Final = "goal_reversed"
+EVT_GOAL_UPDATED: Final = "goal_updated"
 EVT_TEAM_PENALTY: Final = "team_penalty"
 EVT_OPPONENT_PENALTY: Final = "opponent_penalty"
 EVT_PERIOD_START: Final = "period_start"
@@ -65,7 +66,7 @@ EVT_GAME_END_WIN: Final = "game_end_win"
 EVT_GAME_END_LOSS: Final = "game_end_loss"
 EVT_GAME_END_OTL: Final = "game_end_otl"
 
-GOAL_EVENTS: Final = [EVT_TEAM_GOAL, EVT_OPPONENT_GOAL, EVT_GOAL_REVERSED]
+GOAL_EVENTS: Final = [EVT_TEAM_GOAL, EVT_OPPONENT_GOAL, EVT_GOAL_UPDATED, EVT_GOAL_REVERSED]
 PENALTY_EVENTS: Final = [EVT_TEAM_PENALTY, EVT_OPPONENT_PENALTY]
 PERIOD_EVENTS: Final = [
     EVT_PERIOD_START,

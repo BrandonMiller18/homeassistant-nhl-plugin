@@ -91,6 +91,7 @@
             "state": {
               "team_goal": "Team goal",
               "opponent_goal": "Opponent goal",
+              "goal_updated": "Goal details updated",
               "goal_reversed": "Goal reversed"
             }
           }
@@ -142,6 +143,7 @@
       "options": {
         "team_goal": "Team goal",
         "opponent_goal": "Opponent goal",
+        "goal_updated": "Goal details updated",
         "goal_reversed": "Goal reversed",
         "team_penalty": "Team penalty",
         "opponent_penalty": "Opponent penalty",
