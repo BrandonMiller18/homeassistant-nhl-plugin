@@ -6,11 +6,11 @@ import json
 from pathlib import Path
 
 from fake_nhl import FakeGame, club_schedule, league_schedule, standings
-import pytest
 
 from custom_components.nhl_companion.parser import (
     parse_clip,
     parse_club_schedule,
+    parse_game,
     parse_play_by_play,
     parse_schedule,
     parse_standings,
@@ -137,16 +137,74 @@ def test_missing_fields_do_not_crash() -> None:
     assert snap.roster == {}
 
 
-@pytest.mark.parametrize("path", sorted(REAL.glob("*.json")), ids=lambda p: p.name)
-def test_recorded_fixtures_parse(path: Path) -> None:
-    """Run scripts/record_fixtures.py to populate tests/fixtures/real/."""
-    raw = json.loads(path.read_text())
-    if "plays" in raw:
-        snap = parse_play_by_play(raw)
-        assert snap.game.id
-    elif "standings" in raw:
-        assert parse_standings(raw)
-    elif "gameWeek" in raw:
-        parse_schedule(raw)
-    elif "games" in raw:
-        parse_club_schedule(raw)
+# Real responses recorded during STL @ OTT, 2026-10-13 (game 2026020096)
+GAME_ID = 2026020096
+
+
+def real(name: str) -> dict:
+    return json.loads((REAL / name).read_text())
+
+
+def test_real_score_now() -> None:
+    games = [parse_game(g) for g in real("score_now.json")["games"]]
+    assert any(g.id == GAME_ID for g in games)
+    assert {g.state for g in games} <= {"FUT", "PRE", "LIVE", "CRIT", "OVER", "FINAL", "OFF"}
+    stl = next(g for g in games if g.id == GAME_ID)
+    assert (stl.away.abbrev, stl.home.abbrev) == ("STL", "OTT")
+    assert stl.away.name == "St. Louis Blues"
+
+
+def test_real_schedule_and_club_schedule() -> None:
+    days = parse_schedule(real("schedule_now.json"))
+    assert len(days) == 7
+    assert any(g.id == GAME_ID for d in days for g in d.games)
+    games = parse_club_schedule(real("club_schedule_season_STL.json"))
+    assert len(games) >= 82
+    game = next(g for g in games if g.id == GAME_ID)
+    assert game.start_utc is not None
+    assert game.venue
+
+
+def test_real_standings() -> None:
+    rows = parse_standings(real("standings_now.json"))
+    assert len(rows) == 32
+    assert {"STL", "OTT"} <= {r.abbrev for r in rows}
+    assert all(r.division and r.conference for r in rows)
+
+
+def test_real_boxscore_game_block() -> None:
+    game = parse_game(real("boxscore_2026020096_live.json"))
+    assert game.id == GAME_ID
+    assert game.away.abbrev == "STL"
+    assert game.away.sog is not None
+
+
+def test_real_play_by_play_power_play() -> None:
+    snap = parse_play_by_play(real("play_by_play_2026020096_power_play.json"))
+    assert snap.game.state == "LIVE"
+    assert snap.game.has_situation
+    assert snap.game.power_play_abbrev == "OTT"
+    assert snap.game.power_play_remaining is not None
+
+
+def test_real_three_stars() -> None:
+    """Posted about 2 minutes after the final."""
+    stars = parse_three_stars(real("landing_2026020096_final.json"))
+    assert [(s["star"], s["name"], s["team_abbrev"]) for s in stars] == [
+        (1, "P. Suter", "STL"),
+        (2, "M. McTavish", "STL"),
+        (3, "J. Neighbours", "STL"),
+    ]
+    assert stars[0]["points"] == 3
+    assert stars[0]["number"] == 22
+
+
+def test_real_play_by_play_final() -> None:
+    snap = parse_play_by_play(real("play_by_play_2026020096_final.json"))
+    assert snap.game.state in ("FINAL", "OFF")
+    assert snap.game.last_period_type == "REG"
+    assert (snap.game.away.score, snap.game.home.score) == (7, 2)
+    goals = [p for p in snap.plays if p.type_key == "goal"]
+    assert len(goals) == 9
+    assert all(snap.player(int(p.details["scoringPlayerId"])) for p in goals)
+    assert snap.player(8480459).name == "Pius Suter"

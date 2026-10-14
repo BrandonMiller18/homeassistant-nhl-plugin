@@ -54,7 +54,9 @@ def parse_team_side(raw: dict[str, Any] | None) -> TeamSide:
     place = text(raw.get("placeName"))
     common = text(raw.get("commonName"))
     full = text(raw.get("name"))
-    name = f"{place} {common}" if place and common else full or common or place or TEAMS.get(abbrev, abbrev)
+    # score/now only sends name={"default": "Blues"}; prefer the known full name then
+    fallback = TEAMS.get(abbrev) or full or common or place or abbrev
+    name = f"{place} {common}" if place and common else fallback
     logo = raw.get("logo") or (LOGO_URL_TEMPLATE.format(abbrev=abbrev) if abbrev else None)
     return TeamSide(
         id=_int(raw.get("id")),
