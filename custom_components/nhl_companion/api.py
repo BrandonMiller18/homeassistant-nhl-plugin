@@ -31,6 +31,8 @@ _LOGGER = logging.getLogger(__name__)
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=20)
 # Two config entries following the same game share one fetch inside this window
 CACHE_SECONDS = 4.0
+# Shorter max-age values (the CDN sends max-age=0 while bypassing) are not a polling hint
+MIN_CACHE_HINT = 5
 # Bodies kept for conditional requests (one per URL; old games fall out)
 MAX_ETAGS = 16
 
@@ -39,14 +41,16 @@ def _cache_expiry(headers: Any, received: float) -> float | None:
     """Monotonic time the CDN copy we just got goes stale, from Cache-Control and Age.
 
     Live play-by-play is served by Cloudflare with max-age=19 and is rebuilt every
-    20 s, so this tells the coordinator when a new copy can first exist.
+    20 s, so this tells the coordinator when a new copy can first exist. In bursts of
+    a minute or two the CDN instead sends max-age=0 (BYPASS); that is no hint, so the
+    coordinator keeps its normal interval rather than polling the origin every second.
     """
     max_age = None
     for part in (headers.get("Cache-Control") or "").split(","):
         name, _, value = part.strip().partition("=")
         if name == "max-age" and value.isdigit():
             max_age = int(value)
-    if max_age is None:
+    if max_age is None or max_age < MIN_CACHE_HINT:
         return None
     try:
         age = int(headers.get("Age") or 0)

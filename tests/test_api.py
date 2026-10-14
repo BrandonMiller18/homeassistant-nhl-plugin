@@ -23,6 +23,8 @@ def test_cache_expiry_from_max_age_and_age() -> None:
     assert _cache_expiry({"Cache-Control": "max-age=19", "Age": "30"}, 100.0) == 100.0
     assert _cache_expiry({"Cache-Control": "max-age=19"}, 100.0) == 119.0
     assert _cache_expiry({}, 100.0) is None
+    # Seen in bursts during the live game: CDN bypass, no cache hint
+    assert _cache_expiry({"Cache-Control": "no-transform, max-age=0, s-maxage=0"}, 100.0) is None
 
 
 async def test_conditional_request_reuses_body_on_304(

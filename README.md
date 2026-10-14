@@ -40,7 +40,7 @@ Then open the integration's **Configure** to tune it:
 
 | Option | Default | What it does |
 |---|---|---|
-| Live polling interval | 10 s | Longest gap between play-by-play checks during a game (min 5 s). The NHL rebuilds the feed every 20 s behind a 19 s CDN cache, so the integration also polls about 1.5 s after each cached copy expires instead of up to 10 s later. Unchanged responses come back as an empty `304`. |
+| Live polling interval | 10 s | Longest gap between play-by-play checks during a game (min 5 s). The NHL rebuilds the feed every 20 s behind a 19 s CDN cache, so the integration also polls about 1.5 s after each cached copy expires instead of up to 10 s later (2 requests per 20 s at the default, as before). When the CDN bypasses its cache (`max-age=0`, seen in 1-2 minute bursts) it just uses this interval. Unchanged responses come back as an empty `304`. |
 | Alert delay | 0 s | Holds every event so it lines up with your broadcast. Start around 20-40 s for streaming. |
 | "Game starts soon" lead time | 30 min | When `game_soon` fires. |
 | Game day alert hour | 9 | Local hour `game_day` fires on game days. |
