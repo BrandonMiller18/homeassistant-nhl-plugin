@@ -24,6 +24,10 @@ CONF_API_BASE_URL: Final = "api_base_url"
 
 DEFAULT_LIVE_INTERVAL: Final = 10
 MIN_LIVE_INTERVAL: Final = 5
+# Live play-by-play is cached at the CDN for 19 s and rebuilt every 20 s. A poll lands
+# this long after the cached copy expires, so the refreshed copy is already there.
+CDN_REFRESH_SLACK: Final = 1.5
+MIN_ALIGNED_POLL: Final = 1.0
 DEFAULT_ALERT_DELAY: Final = 0
 MAX_ALERT_DELAY: Final = 180
 DEFAULT_GAME_SOON_MINUTES: Final = 30

@@ -18,6 +18,7 @@ from homeassistant.util import dt as dt_util
 
 from .api import NhlApiClient, NhlApiError
 from .const import (
+    CDN_REFRESH_SLACK,
     CONF_ALERT_DELAY,
     CONF_GAME_DAY_HOUR,
     CONF_GAME_SOON_MINUTES,
@@ -40,6 +41,7 @@ from .const import (
     INTERVAL_LEAGUE_LIVE,
     INTERVAL_PRE_GAME,
     LIVE_STATES,
+    MIN_ALIGNED_POLL,
     MIN_LIVE_INTERVAL,
     OPPONENT_EVENTS,
     PBP_LEAD_MINUTES,
@@ -347,10 +349,23 @@ class TeamCoordinator(DataUpdateCoordinator[TeamData]):
                 )
         return events
 
-    def _next_interval(self, data: TeamData, now: datetime) -> int:
+    def _live_poll_delay(self, game_id: int) -> float:
+        """Poll again just after the CDN copy expires, if that is sooner than the interval.
+
+        The NHL rebuilds play-by-play every 20 s behind a 19 s CDN cache, so a
+        poll timed to the cache expiry sees each new copy within about a second
+        without polling more often.
+        """
+        interval = float(self.live_interval)
+        stale = self.client.seconds_until_stale(f"gamecenter/{game_id}/play-by-play")
+        if stale is not None and stale + CDN_REFRESH_SLACK < interval:
+            return max(MIN_ALIGNED_POLL, stale + CDN_REFRESH_SLACK)
+        return interval
+
+    def _next_interval(self, data: TeamData, now: datetime) -> float:
         game = data.current_game
         if data.snapshot is not None and data.snapshot.game.state not in FINISHED_STATES:
-            return self.live_interval
+            return self._live_poll_delay(data.snapshot.game.id)
         if self._schedule_dirty:
             return INTERVAL_PRE_GAME
         nxt = data.next_game

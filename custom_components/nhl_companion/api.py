@@ -23,6 +23,28 @@ _LOGGER = logging.getLogger(__name__)
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=20)
 # Two config entries following the same game share one fetch inside this window
 CACHE_SECONDS = 4.0
+# Bodies kept for conditional requests (one per URL; old games fall out)
+MAX_ETAGS = 16
+
+
+def _cache_expiry(headers: Any, received: float) -> float | None:
+    """Monotonic time the CDN copy we just got goes stale, from Cache-Control and Age.
+
+    Live play-by-play is served by Cloudflare with max-age=19 and is rebuilt every
+    20 s, so this tells the coordinator when a new copy can first exist.
+    """
+    max_age = None
+    for part in (headers.get("Cache-Control") or "").split(","):
+        name, _, value = part.strip().partition("=")
+        if name == "max-age" and value.isdigit():
+            max_age = int(value)
+    if max_age is None:
+        return None
+    try:
+        age = int(headers.get("Age") or 0)
+    except ValueError:
+        age = 0
+    return received + max(0, max_age - age)
 
 
 class NhlApiError(Exception):
@@ -42,24 +64,47 @@ class NhlApiClient:
         self.base_url = base_url.rstrip("/")
         self._cache: dict[str, tuple[float, Any]] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        # url -> (ETag, body) for conditional requests; the API answers 304 on a match
+        self._etags: dict[str, tuple[str, dict[str, Any]]] = {}
+        self._expires: dict[str, float] = {}
+
+    def _url(self, path: str) -> str:
+        return f"{self.base_url}/{path.lstrip('/')}"
+
+    def seconds_until_stale(self, path: str) -> float | None:
+        """Seconds until the last response for path expires at the CDN, if known."""
+        expires = self._expires.get(self._url(path))
+        if expires is None:
+            return None
+        return max(0.0, expires - time.monotonic())
 
     async def _get(self, path: str, cache: bool = True) -> dict[str, Any]:
-        url = f"{self.base_url}/{path.lstrip('/')}"
+        url = self._url(path)
         lock = self._locks.setdefault(url, asyncio.Lock())
         async with lock:
             if cache and (hit := self._cache.get(url)) and time.monotonic() - hit[0] < CACHE_SECONDS:
                 return hit[1]
+            headers = {"User-Agent": f"HomeAssistant-NHLCompanion/{VERSION}"}
+            known = self._etags.get(url)
+            if known:
+                headers["If-None-Match"] = known[0]
             try:
-                async with self._session.get(
-                    url,
-                    timeout=REQUEST_TIMEOUT,
-                    headers={"User-Agent": f"HomeAssistant-NHLCompanion/{VERSION}"},
-                ) as resp:
+                async with self._session.get(url, timeout=REQUEST_TIMEOUT, headers=headers) as resp:
                     if resp.status == 404:
                         raise NhlApiError(f"Not found: {url}")
                     if resp.status >= 400:
                         raise NhlConnectionError(f"HTTP {resp.status} from {url}")
-                    data = await resp.json(content_type=None)
+                    if (expires := _cache_expiry(resp.headers, time.monotonic())) is not None:
+                        self._expires[url] = expires
+                    if resp.status == 304 and known:
+                        data = known[1]
+                    else:
+                        data = await resp.json(content_type=None)
+                        if isinstance(data, dict) and (etag := resp.headers.get("ETag")):
+                            self._etags.pop(url, None)
+                            self._etags[url] = (etag, data)
+                            while len(self._etags) > MAX_ETAGS:
+                                self._etags.pop(next(iter(self._etags)))
             except (aiohttp.ClientError, TimeoutError) as err:
                 raise NhlConnectionError(f"Error requesting {url}: {err}") from err
             if not isinstance(data, dict):
