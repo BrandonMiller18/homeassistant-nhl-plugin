@@ -228,7 +228,7 @@ async def main() -> None:
                     )
                     events_log.flush()
 
-                if raw.get("gameState") in ("FINAL", "OFF") and final_at is None:
+                if raw.get("gameState") in ("OVER", "FINAL", "OFF") and final_at is None:
                     final_at = time.monotonic()
                     say("INFO", f"game final, polling {args.after_final}s more for late edits")
             if final_at and time.monotonic() - final_at > args.after_final:

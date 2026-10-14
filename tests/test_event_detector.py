@@ -76,6 +76,22 @@ def test_full_game_sequence() -> None:
     assert step(det, game) == []
 
 
+def test_game_over_state_ends_the_game() -> None:
+    """Live STL@OTT 2026-10-13: the feed went LIVE -> CRIT -> OVER at the horn."""
+    game = FakeGame()
+    game.start_period(3)
+    det = EventDetector("BOS")
+    step(det, game)
+    game.goal("BOS", BOS_PASTA)
+    game.state = "CRIT"
+    assert types(step(det, game)) == ["team_goal"]
+    game.end_period(intermission=False)
+    game.state = "OVER"
+    assert types(step(det, game)) == ["period_end", "game_end_win"]
+    game.state = "OFF"
+    assert step(det, game) == []
+
+
 def test_assists_added_later_fire_goal_updated() -> None:
     """Live STL@OTT 2026-10-13: assists arrived 20 s and 40 s after the goal."""
     game = FakeGame()

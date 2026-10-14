@@ -7,7 +7,7 @@
 const NHL_VERSION = "0.1.0";
 const LOGO = (abbrev) => `https://assets.nhle.com/logos/nhl/svg/${abbrev}_light.svg`;
 const LIVE = new Set(["LIVE", "CRIT"]);
-const DONE = new Set(["FINAL", "OFF"]);
+const DONE = new Set(["OVER", "FINAL", "OFF"]);
 
 const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
